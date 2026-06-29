@@ -29,6 +29,7 @@ def async_register(hass: HomeAssistant) -> None:
         return
     store["ws_registered"] = True
     websocket_api.async_register_command(hass, ws_get)
+    websocket_api.async_register_command(hass, ws_refresh)
     websocket_api.async_register_command(hass, ws_save_zones)
     websocket_api.async_register_command(hass, ws_save_general)
     websocket_api.async_register_command(hass, ws_run_now)
@@ -100,6 +101,18 @@ def ws_get(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg:
             "controls": _controls(hass, entry),
         },
     )
+
+
+@websocket_api.websocket_command({vol.Required("type"): "zoneflow/refresh"})
+@websocket_api.async_response
+async def ws_refresh(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict
+) -> None:
+    """Forțează re-interogarea prognozei + recalcularea."""
+    entry = _entry(hass)
+    if entry is not None:
+        await entry.runtime_data.async_request_refresh()
+    connection.send_result(msg["id"], {"ok": True})
 
 
 @websocket_api.websocket_command(

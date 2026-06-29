@@ -290,7 +290,12 @@ class ZoneFlowPanel extends HTMLElement {
             ambele supape + o rată.</li>
         <li><b>Spate</b> (mijloc + margine): două porțiuni („Interior", „Margine"); grup „Mijloc"
             cu rată în ambele, grup „Margine" cu rată doar în „Margine".</li>
-      </ul>`;
+      </ul>
+      <h3>Furnizor de prognoză</h3>
+      <p>ZoneFlow folosește o entitate <code>weather</code> aleasă în Setări (nu un furnizor
+      propriu). Dacă „Media temperaturii" e goală, entitatea aleasă nu oferă prognoză cu
+      temperatură — recomandat <b>Met.no</b> (built-in în HA, fără cheie). Butonul
+      <b>Reîmprospătează</b> forțează recalcularea (re-interoghează prognoza).</p>`;
   }
 
   // ------------------------------------------------------------------- wire
@@ -343,7 +348,10 @@ class ZoneFlowPanel extends HTMLElement {
     try {
       if (act === "run") return void (await this._ws({ type: "zoneflow/run_now" }), this._reload(true));
       if (act === "stop") return void (await this._ws({ type: "zoneflow/stop" }), this._reload(true));
-      if (act === "refresh") return void this._reload(true);
+      if (act === "refresh") {
+        await this._ws({ type: "zoneflow/refresh" });  // forțează re-interogarea prognozei
+        return void this._reload(true);
+      }
 
       if (act === "add-zone") {
         this._zones.push({ id: genId(), name: "Zonă nouă", sections: [{ id: genId(), name: "Toată zona", area: 0 }], groups: [] });

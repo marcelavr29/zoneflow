@@ -145,26 +145,38 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
         self.recompute()
 
     # ------------------------------------------------------------- prognoză
-    async def _fetch_avg_temp(self) -> float | None:
-        """Media temperaturii din prognoza zilnică a entității weather."""
+    async def _get_forecast(self, forecast_type: str) -> list[dict]:
+        """Lista de prognoză de un anumit tip (daily/twice_daily/hourly) sau [] dacă lipsește."""
         try:
             resp = await self.hass.services.async_call(
                 "weather",
                 "get_forecasts",
-                {"entity_id": self.weather_entity, "type": "daily"},
+                {"entity_id": self.weather_entity, "type": forecast_type},
                 blocking=True,
                 return_response=True,
             )
-        except Exception as err:  # noqa: BLE001 - degradăm grațios la fallback
-            _LOGGER.warning("Nu pot obține prognoza (%s); folosesc temperatura curentă", err)
-            return self._current_temp_fallback()
+        except Exception as err:  # noqa: BLE001 - tipul poate să nu fie suportat
+            _LOGGER.debug("Prognoza '%s' indisponibilă (%s)", forecast_type, err)
+            return []
+        return (resp or {}).get(self.weather_entity, {}).get("forecast", []) or []
 
-        forecasts = (resp or {}).get(self.weather_entity, {}).get("forecast", [])
-        temps = [f.get("temperature") for f in forecasts[: self.forecast_days]]
-        avg = calc.weekly_avg(temps)
-        if avg is None:
-            return self._current_temp_fallback()
-        return avg
+    async def _fetch_avg_temp(self) -> float | None:
+        """Media temperaturii din prognoză, încercând mai multe tipuri (entitățile diferă)."""
+        limits = {"daily": self.forecast_days, "twice_daily": self.forecast_days * 2, "hourly": self.forecast_days * 24}
+        for ftype in ("daily", "twice_daily", "hourly"):
+            forecasts = await self._get_forecast(ftype)
+            if not forecasts:
+                continue
+            temps = [f.get("temperature") for f in forecasts[: limits[ftype]]]
+            avg = calc.weekly_avg(temps)
+            if avg is not None:
+                _LOGGER.debug("Media temperaturii din prognoza '%s' = %.1f", ftype, avg)
+                return avg
+        _LOGGER.warning(
+            "Entitatea weather %s nu oferă prognoză cu temperatură; folosesc temperatura curentă",
+            self.weather_entity,
+        )
+        return self._current_temp_fallback()
 
     def _current_temp_fallback(self) -> float | None:
         state = self.hass.states.get(self.weather_entity)
@@ -179,19 +191,9 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
 
     async def _fetch_rain_mm(self) -> float:
         """Ploaia prevăzută (mm, ponderată cu probabilitatea) pe următoarele ore."""
-        try:
-            resp = await self.hass.services.async_call(
-                "weather",
-                "get_forecasts",
-                {"entity_id": self.weather_entity, "type": "hourly"},
-                blocking=True,
-                return_response=True,
-            )
-        except Exception as err:  # noqa: BLE001 - unele entități nu au prognoză orară
-            _LOGGER.debug("Fără prognoză orară pentru ploaie (%s)", err)
+        forecasts = await self._get_forecast("hourly")
+        if not forecasts:
             return 0.0
-
-        forecasts = (resp or {}).get(self.weather_entity, {}).get("forecast", [])
         now = dt_util.utcnow()
         start = now - dt.timedelta(hours=1)  # includem ora curentă
         horizon = now + dt.timedelta(hours=RAIN_WINDOW_HOURS)
