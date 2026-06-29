@@ -47,24 +47,14 @@ DEFAULT_DEPTH = 10.0
 DEFAULT_AREA = 0.0
 DEFAULT_SECTION_NAME = "Toată zona"
 
-# --- Zile săptămână (datetime.weekday(): 0 = luni) ----------------------------
-WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
-WEEKDAY_NAMES = {
-    "mon": "Luni",
-    "tue": "Marți",
-    "wed": "Miercuri",
-    "thu": "Joi",
-    "fri": "Vineri",
-    "sat": "Sâmbătă",
-    "sun": "Duminică",
-}
-
 # --- Chei valori reglabile live (coordinator.values) --------------------------
 VAL_FACTOR = "factor"
 VAL_ENABLED = "enabled"
 VAL_START_TIME = "start_time"
-VAL_DAY = {key: f"day_{key}" for key in WEEKDAYS}
+VAL_INTERVAL = "interval_days"  # interval între udări (zile), numărat de la ultima udare
 VAL_RAIN_COMP = "rain_comp"  # compensarea ploii (scade ploaia prevăzută din țintă)
+
+DEFAULT_INTERVAL_DAYS = 2
 
 # Fereastra de prognoză orară pentru ploaia luată în calcul.
 RAIN_WINDOW_HOURS = 24

@@ -14,12 +14,11 @@ from .const import (
     CONF_WEATHER_ENTITY,
     CONF_ZONES,
     DOMAIN,
-    VAL_DAY,
     VAL_ENABLED,
     VAL_FACTOR,
+    VAL_INTERVAL,
     VAL_RAIN_COMP,
     VAL_START_TIME,
-    WEEKDAYS,
 )
 
 
@@ -66,8 +65,8 @@ def _controls(hass: HomeAssistant, entry: ConfigEntry) -> dict:
         "enabled": eid("switch", VAL_ENABLED),
         "rain_comp": eid("switch", VAL_RAIN_COMP),
         "factor": eid("number", VAL_FACTOR),
+        "interval": eid("number", VAL_INTERVAL),
         "start_time": eid("time", VAL_START_TIME),
-        "days": {key: eid("switch", VAL_DAY[key]) for key in WEEKDAYS},
     }
 
 

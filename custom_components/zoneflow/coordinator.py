@@ -9,6 +9,7 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.helpers.event import async_track_time_change
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
@@ -28,14 +29,14 @@ from .const import (
     DEFAULT_AREA,
     DEFAULT_FORECAST_DAYS,
     DEFAULT_TEST_MINUTES,
+    DEFAULT_INTERVAL_DAYS,
     DOMAIN,
     RAIN_WINDOW_HOURS,
-    VAL_DAY,
     VAL_ENABLED,
     VAL_FACTOR,
+    VAL_INTERVAL,
     VAL_RAIN_COMP,
     VAL_START_TIME,
-    WEEKDAYS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -64,7 +65,7 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
             entry.data.get(CONF_FORECAST_DAYS, DEFAULT_FORECAST_DAYS)
         )
 
-        # Valori reglabile live (factor / enable / zile / oră / compensare ploaie).
+        # Valori reglabile live (factor / enable / oră / interval / compensare ploaie).
         self.values: dict[str, object] = {}
         self.avg_temp: float | None = None
         self.rain_mm: float = 0.0  # ploaie prevăzută (ponderată) pe fereastra de 24h
@@ -72,6 +73,28 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
         self.is_watering = False
         self._watering_task: asyncio.Task | None = None
         self._unsub_time: CALLBACK_TYPE | None = None
+
+        # Data ultimei udări reale (persistată) — baza intervalului între udări.
+        self.last_run: dt.date | None = None
+        self._store: Store = Store(hass, 1, f"{DOMAIN}_{entry.entry_id}")
+
+    async def async_load_store(self) -> None:
+        """Încarcă `last_run` din storage; la prima instalare îl ancorează la azi."""
+        data = await self._store.async_load()
+        stored = (data or {}).get("last_run")
+        if stored:
+            try:
+                self.last_run = dt.date.fromisoformat(stored)
+            except ValueError:
+                self.last_run = None
+        if self.last_run is None:
+            self.last_run = dt_util.now().date()
+            await self._save_last_run()
+
+    async def _save_last_run(self) -> None:
+        await self._store.async_save(
+            {"last_run": self.last_run.isoformat() if self.last_run else None}
+        )
 
     # --------------------------------------------------------------- topologie
     @property
@@ -117,7 +140,7 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
     def set_value(self, key: str, value: object) -> None:
         """Apelat de entitățile de reglaj când valoarea se schimbă."""
         self.values[key] = value
-        if key == VAL_START_TIME or key == VAL_ENABLED or key in VAL_DAY.values():
+        if key in (VAL_START_TIME, VAL_ENABLED, VAL_INTERVAL):
             self._reschedule()
         self.recompute()
 
@@ -262,6 +285,8 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
             "runtimes": runtimes,
             "liters": self._session_liters(effective, runtimes),
             "next_run": self._next_run(),
+            "last_run": self.last_run.isoformat() if self.last_run else None,
+            "interval_days": self._interval(),
         }
 
     @callback
@@ -288,32 +313,31 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
             self.hass, self._scheduled_fire, hour=start.hour, minute=start.minute, second=0
         )
 
+    def _interval(self) -> int:
+        return max(1, int(self.get_float(VAL_INTERVAL, DEFAULT_INTERVAL_DAYS)))
+
     @callback
     def _scheduled_fire(self, now: dt.datetime) -> None:
         if not self.get_bool(VAL_ENABLED, True):
             return
-        weekday_key = WEEKDAYS[now.weekday()]
-        if not self.get_bool(VAL_DAY[weekday_key], False):
-            return
-        _LOGGER.info("Pornire programată a irigației (%s)", weekday_key)
-        self.start_watering()
+        if self.last_run is None:
+            self.last_run = now.date()
+        if (now.date() - self.last_run).days >= self._interval():
+            _LOGGER.info("Pornire programată a irigației (interval atins)")
+            self.start_watering()
 
     def _next_run(self) -> dt.datetime | None:
         start = self._start_time()
         if start is None or not self.get_bool(VAL_ENABLED, True):
             return None
-        active = [i for i, key in enumerate(WEEKDAYS) if self.get_bool(VAL_DAY[key], False)]
-        if not active:
-            return None
         now = dt_util.now()
-        for offset in range(0, 8):
-            cand_date = (now + dt.timedelta(days=offset)).date()
-            if cand_date.weekday() not in active:
-                continue
-            cand = dt.datetime.combine(cand_date, start, tzinfo=now.tzinfo)
-            if cand > now:
-                return cand
-        return None
+        base = self.last_run or now.date()
+        due = base + dt.timedelta(days=self._interval())
+        d = max(due, now.date())
+        cand = dt.datetime.combine(d, start, tzinfo=now.tzinfo)
+        if cand <= now:
+            cand = dt.datetime.combine(d + dt.timedelta(days=1), start, tzinfo=now.tzinfo)
+        return cand
 
     # -------------------------------------------------------------- execuție
     @callback
@@ -339,6 +363,7 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
             )
             return
         self.is_watering = True
+        watered = False
         self.async_update_listeners()
         try:
             for group in groups:
@@ -347,6 +372,7 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
                 if minutes <= 0 or not switches:
                     continue
                 await self._run_group(switches, minutes)
+                watered = True
         except asyncio.CancelledError:
             _LOGGER.info("Ciclu de udare anulat")
             raise
@@ -354,7 +380,12 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
             await self.async_all_off()
             self.is_watering = False
             self._watering_task = None
+            if watered:
+                # Udare reală → resetăm ceasul intervalului (persistat).
+                self.last_run = dt_util.now().date()
+                self.hass.async_create_task(self._save_last_run())
             self.async_update_listeners()
+            self.recompute()
 
     async def _run_group(self, switches: list[str], minutes: float) -> None:
         """Pornește toate supapele grupului SIMULTAN, așteaptă, apoi le oprește."""

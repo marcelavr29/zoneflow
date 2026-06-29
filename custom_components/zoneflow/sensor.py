@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -85,6 +86,15 @@ _GLOBAL_DEFS: list[ZoneFlowSensorDef] = [
         value_fn=lambda d: d.get("next_run"),
         device_class=SensorDeviceClass.TIMESTAMP,
         icon="mdi:calendar-clock",
+    ),
+    ZoneFlowSensorDef(
+        key="last_run",
+        name="Ultima udare",
+        value_fn=lambda d: (
+            dt.date.fromisoformat(d["last_run"]) if d.get("last_run") else None
+        ),
+        device_class=SensorDeviceClass.DATE,
+        icon="mdi:history",
     ),
 ]
 

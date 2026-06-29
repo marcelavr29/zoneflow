@@ -11,7 +11,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from . import ZoneFlowConfigEntry
-from .const import VAL_DAY, VAL_ENABLED, VAL_RAIN_COMP, WEEKDAY_NAMES, WEEKDAYS
+from .const import VAL_ENABLED, VAL_RAIN_COMP
 from .coordinator import ZoneFlowCoordinator
 from .entity import ZoneFlowEntity
 
@@ -22,36 +22,25 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     coordinator = entry.runtime_data
-    entities: list[SwitchEntity] = [
-        ZoneFlowToggle(
-            coordinator,
-            value_key=VAL_ENABLED,
-            name="Irigație activă",
-            default=True,
-            icon="mdi:power",
-        ),
-        ZoneFlowToggle(
-            coordinator,
-            value_key=VAL_RAIN_COMP,
-            name="Compensare ploaie",
-            default=True,
-            icon="mdi:weather-rainy",
-            category=EntityCategory.CONFIG,
-        ),
-    ]
-    for idx, key in enumerate(WEEKDAYS, start=1):
-        entities.append(
+    async_add_entities(
+        [
             ZoneFlowToggle(
                 coordinator,
-                value_key=VAL_DAY[key],
-                # Prefix numeric => ordine de săptămână (altfel dashboard-ul le sortează alfabetic).
-                name=f"Zi udare {idx} · {WEEKDAY_NAMES[key]}",
-                default=False,
-                icon="mdi:calendar-check",
+                value_key=VAL_ENABLED,
+                name="Irigație activă",
+                default=True,
+                icon="mdi:power",
+            ),
+            ZoneFlowToggle(
+                coordinator,
+                value_key=VAL_RAIN_COMP,
+                name="Compensare ploaie",
+                default=True,
+                icon="mdi:weather-rainy",
                 category=EntityCategory.CONFIG,
-            )
-        )
-    async_add_entities(entities)
+            ),
+        ]
+    )
 
 
 class ZoneFlowToggle(ZoneFlowEntity, RestoreEntity, SwitchEntity):

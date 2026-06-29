@@ -11,11 +11,6 @@ const TABS = [
   ["ajutor", "Ajutor"],
 ];
 
-const WEEKDAYS = [
-  ["mon", "Luni"], ["tue", "Marți"], ["wed", "Miercuri"], ["thu", "Joi"],
-  ["fri", "Vineri"], ["sat", "Sâmbătă"], ["sun", "Duminică"],
-];
-
 const genId = () =>
   (window.crypto && crypto.randomUUID
     ? crypto.randomUUID().slice(0, 8)
@@ -133,6 +128,7 @@ class ZoneFlowPanel extends HTMLElement {
       .map((gid) => `<tr><td>${esc(this._groupName(gid))}</td><td class="r">${fmt(rt[gid], " min")}</td></tr>`)
       .join("") || `<tr><td colspan="2" class="muted">Niciun grup configurat</td></tr>`;
     const nr = l.next_run ? new Date(l.next_run).toLocaleString() : "—";
+    const lr = l.last_run ? new Date(l.last_run).toLocaleDateString() : "—";
     return `
       <div class="cards">
         <div class="card"><span>Media temperaturii</span><b>${fmt(l.avg_temp, " °C")}</b></div>
@@ -140,6 +136,8 @@ class ZoneFlowPanel extends HTMLElement {
         <div class="card"><span>Ploaie prevăzută (24h)</span><b>${fmt(l.rain_forecast_mm, " mm")}</b></div>
         <div class="card"><span>Țintă după ploaie</span><b>${fmt(l.effective_target_mm, " L/m²")}</b></div>
         <div class="card"><span>Apă pe sesiune</span><b>${fmt(l.liters, " L", 0)}</b></div>
+        <div class="card"><span>Interval</span><b>${l.interval_days != null ? l.interval_days + " zile" : "—"}</b></div>
+        <div class="card"><span>Ultima udare</span><b>${esc(lr)}</b></div>
         <div class="card"><span>Următoarea udare</span><b>${esc(nr)}</b></div>
       </div>
       ${l.will_skip ? `<div class="note">🌧️ Sesiunea se va sări — plouă cât ținta sau mai mult.</div>` : ""}
@@ -239,11 +237,7 @@ class ZoneFlowPanel extends HTMLElement {
     const factorState = st(c.factor);
     const enabledOn = st(c.enabled) && st(c.enabled).state === "on";
     const rainOn = st(c.rain_comp) && st(c.rain_comp).state === "on";
-    const days = WEEKDAYS.map(([k, label]) => {
-      const eid = (c.days || {})[k];
-      const on = st(eid) && st(eid).state === "on";
-      return `<label class="chk"><input type="checkbox" data-ctrl="day" data-eid="${esc(eid)}" ${on ? "checked" : ""}/> ${label}</label>`;
-    }).join("");
+    const intervalState = st(c.interval);
     return `
       <h3>General</h3>
       <label class="lbl">Entitate weather (prognoză)</label>
@@ -262,11 +256,13 @@ class ZoneFlowPanel extends HTMLElement {
       <div class="row2">
         <label class="lbl">Ora de udare
           <input id="starttime" type="time" value="${esc(timeState ? timeState.state.slice(0,5) : "06:00")}"/></label>
+        <label class="lbl">Interval între udări (zile)
+          <input id="interval" type="number" min="1" max="60" step="1" value="${esc(intervalState ? intervalState.state : "2")}" class="num"/></label>
         <label class="lbl">Factor corecție
           <input id="factor" type="number" min="0" max="3" step="0.05" value="${esc(factorState ? factorState.state : "1.0")}" class="num"/></label>
       </div>
-      <div class="sub">Zile de udare</div>
-      <div class="days">${days}</div>`;
+      <p class="muted">Udarea pornește la „Ora de udare", apoi din nou după intervalul setat,
+      numărat de la ultima udare reală.</p>`;
   }
 
   _renderAjutor() {
@@ -338,10 +334,8 @@ class ZoneFlowPanel extends HTMLElement {
   async _onControl(el) {
     const eid = el.dataset.eid;
     if (!eid || eid === "null") return;
-    const ctrl = el.dataset.ctrl;
-    if (ctrl === "toggle" || ctrl === "day") {
-      const domain = "switch";
-      await this._hass.callService(domain, el.checked ? "turn_on" : "turn_off", { entity_id: eid });
+    if (el.dataset.ctrl === "toggle") {
+      await this._hass.callService("switch", el.checked ? "turn_on" : "turn_off", { entity_id: eid });
     }
   }
 
@@ -389,6 +383,8 @@ class ZoneFlowPanel extends HTMLElement {
         if (c.start_time && t) await this._hass.callService("time", "set_value", { entity_id: c.start_time, time: t.length === 5 ? t + ":00" : t });
         const f = this.shadowRoot.getElementById("factor").value;
         if (c.factor && f !== "") await this._hass.callService("number", "set_value", { entity_id: c.factor, value: parseFloat(f) });
+        const iv = this.shadowRoot.getElementById("interval").value;
+        if (c.interval && iv !== "") await this._hass.callService("number", "set_value", { entity_id: c.interval, value: parseInt(iv) });
         this._toast("Setările au fost salvate.");
         return this._reload(true);
       }

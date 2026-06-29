@@ -30,6 +30,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ZoneFlowConfigEntry) -> 
 
     _async_cleanup_orphans(hass, entry)
 
+    # Încarcă data ultimei udări (baza intervalului între udări).
+    await coordinator.async_load_store()
+
     # Siguranță: la pornire ne asigurăm că toate supapele sunt închise
     # (în caz că HA a fost repornit în mijlocul unui ciclu).
     await coordinator.async_all_off()
@@ -58,11 +61,18 @@ def _async_cleanup_orphans(hass: HomeAssistant, entry: ZoneFlowConfigEntry) -> N
     prefix = f"{entry.entry_id}_"
     for reg_entry in er.async_entries_for_config_entry(registry, entry.entry_id):
         uid = reg_entry.unique_id
-        if not uid.startswith(prefix) or not uid.endswith("_runtime"):
+        if not uid.startswith(prefix):
             continue
-        circuit_id = uid[len(prefix) : -len("_runtime")]
-        if circuit_id and circuit_id not in valid_ids:
+        suffix = uid[len(prefix) :]
+        # Switch-urile vechi de zi (model înlocuit de interval).
+        if suffix.startswith("day_"):
             registry.async_remove(reg_entry.entity_id)
+            continue
+        # Senzori de durată ai grupurilor care nu mai există.
+        if suffix.endswith("_runtime"):
+            group_id = suffix[: -len("_runtime")]
+            if group_id and group_id not in valid_ids:
+                registry.async_remove(reg_entry.entity_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ZoneFlowConfigEntry) -> bool:
