@@ -18,7 +18,11 @@ async def async_setup_entry(
 ) -> None:
     coordinator = entry.runtime_data
     async_add_entities(
-        [ZoneFlowRunNowButton(coordinator), ZoneFlowStopButton(coordinator)]
+        [
+            ZoneFlowRunNowButton(coordinator),
+            ZoneFlowStopButton(coordinator),
+            ZoneFlowScheduleDueButton(coordinator),
+        ]
     )
 
 
@@ -48,3 +52,17 @@ class ZoneFlowStopButton(ZoneFlowEntity, ButtonEntity):
 
     async def async_press(self) -> None:
         await self.coordinator.async_stop_watering()
+
+
+class ZoneFlowScheduleDueButton(ZoneFlowEntity, ButtonEntity):
+    """Face următoarea udare scadentă → udă automat la următoarea oră programată."""
+
+    _attr_icon = "mdi:calendar-arrow-right"
+
+    def __init__(self, coordinator: ZoneFlowCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.entry.entry_id}_schedule_due"
+        self._attr_name = "Programează la următoarea oră"
+
+    async def async_press(self) -> None:
+        self.coordinator.mark_due()

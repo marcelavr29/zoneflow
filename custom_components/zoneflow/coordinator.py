@@ -338,6 +338,19 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
             cand = dt.datetime.combine(d + dt.timedelta(days=1), start, tzinfo=now.tzinfo)
         return cand
 
+    @callback
+    def mark_due(self) -> None:
+        """Face următoarea udare programată „scadentă" (ex. prima udare la noapte).
+
+        Setează `last_run` cu un interval în urmă, astfel încât la următoarea oră programată
+        condiția `(azi − last_run) >= interval` să fie îndeplinită → udă automat la ora setată.
+        """
+        self.last_run = dt_util.now().date() - dt.timedelta(days=self._interval())
+        if self.hass is not None:
+            self.hass.async_create_task(self._save_last_run())
+            self.recompute()
+        _LOGGER.info("Programare forțată: udare scadentă la următoarea oră (%s)", self.last_run)
+
     # -------------------------------------------------------------- execuție
     @callback
     def start_watering(self) -> None:

@@ -38,6 +38,7 @@ def async_register(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_save_general)
     websocket_api.async_register_command(hass, ws_run_now)
     websocket_api.async_register_command(hass, ws_stop)
+    websocket_api.async_register_command(hass, ws_schedule_due)
 
 
 def _entry(hass: HomeAssistant) -> ConfigEntry | None:
@@ -189,4 +190,16 @@ async def ws_stop(
     entry = _entry(hass)
     if entry is not None:
         await entry.runtime_data.async_stop_watering()
+    connection.send_result(msg["id"], {"ok": True})
+
+
+@websocket_api.websocket_command({vol.Required("type"): "zoneflow/schedule_due"})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_schedule_due(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict
+) -> None:
+    entry = _entry(hass)
+    if entry is not None:
+        entry.runtime_data.mark_due()
     connection.send_result(msg["id"], {"ok": True})

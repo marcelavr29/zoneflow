@@ -147,8 +147,11 @@ class ZoneFlowPanel extends HTMLElement {
       <div class="actions">
         <button class="btn primary" data-act="run">💧 Udă acum</button>
         <button class="btn" data-act="stop">⏹️ Oprește</button>
+        <button class="btn" data-act="schedule">📅 Udă la următoarea oră</button>
         <button class="btn" data-act="refresh">↻ Reîmprospătează</button>
-      </div>`;
+      </div>
+      <p class="muted">„Udă la următoarea oră" face prima udare să pornească automat la „Ora de
+      udare" (ex. la noapte), apoi continuă pe interval.</p>`;
   }
 
   _renderZone() {
@@ -335,6 +338,11 @@ class ZoneFlowPanel extends HTMLElement {
       if (act === "stop") return void (await this._ws({ type: "zoneflow/stop" }), this._reload(true));
       if (act === "refresh") {
         await this._ws({ type: "zoneflow/refresh" });  // forțează re-interogarea prognozei
+        return void this._reload(true);
+      }
+      if (act === "schedule") {
+        await this._ws({ type: "zoneflow/schedule_due" });
+        this._toast("Prima udare va porni la următoarea oră programată.");
         return void this._reload(true);
       }
 
