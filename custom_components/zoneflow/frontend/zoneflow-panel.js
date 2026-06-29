@@ -34,6 +34,7 @@ class ZoneFlowPanel extends HTMLElement {
     this._loaded = false;
     this._error = null;
     this._refresh = null;
+    this._dirty = false;  // modificări nesalvate în editorul de zone
   }
 
   set hass(hass) {
@@ -63,6 +64,7 @@ class ZoneFlowPanel extends HTMLElement {
     try {
       this._data = await this._ws({ type: "zoneflow/get" });
       this._zones = JSON.parse(JSON.stringify(this._data.zones || []));
+      this._dirty = false;
       this._error = null;
     } catch (e) {
       this._error = (e && e.message) || "Eroare la încărcare";
@@ -164,8 +166,9 @@ class ZoneFlowPanel extends HTMLElement {
       cu caserole (mm în testul de ${esc((this._data.general || {}).test_minutes || 10)} min).
       Durata = țintă / rată.</p>
       ${zones}
-      <div class="actions">
+      <div class="savebar">
         <button class="btn" data-act="add-zone">➕ Adaugă zonă</button>
+        <span id="zsave-status" class="dirty">${this._dirty ? "● modificări nesalvate" : ""}</span>
         <button class="btn primary" data-act="save-zones">💾 Salvează zonele</button>
       </div>`;
   }
@@ -322,6 +325,13 @@ class ZoneFlowPanel extends HTMLElement {
     else if (d.f === "switches")
       z.groups[+d.g].switches = Array.from(el.selectedOptions).map((o) => o.value);
     else if (d.f === "grate") z.groups[+d.g].rate = parseFloat(el.value) || 0;
+    this._markDirty();
+  }
+
+  _markDirty() {
+    this._dirty = true;
+    const s = this.shadowRoot.getElementById("zsave-status");
+    if (s) s.textContent = "● modificări nesalvate";
   }
 
   async _onControl(el) {
@@ -348,17 +358,20 @@ class ZoneFlowPanel extends HTMLElement {
 
       if (act === "add-zone") {
         this._zones.push({ id: genId(), name: "Zonă nouă", area: 0, factor_pct: 100, groups: [] });
+        this._dirty = true;
         return this._render();
       }
-      if (act === "del-zone") { this._zones.splice(+d.z, 1); return this._render(); }
+      if (act === "del-zone") { this._zones.splice(+d.z, 1); this._dirty = true; return this._render(); }
       if (act === "add-group") {
         this._zones[+d.z].groups.push({ id: genId(), name: "Grup", switches: [], rate: 10 });
+        this._dirty = true;
         return this._render();
       }
-      if (act === "del-group") { this._zones[+d.z].groups.splice(+d.g, 1); return this._render(); }
+      if (act === "del-group") { this._zones[+d.z].groups.splice(+d.g, 1); this._dirty = true; return this._render(); }
 
       if (act === "save-zones") {
         await this._ws({ type: "zoneflow/save_zones", zones: this._zones });
+        this._dirty = false;
         this._toast("Zonele au fost salvate.");
         return this._reload(true);
       }
@@ -412,6 +425,8 @@ const STYLE = `
   table{width:100%;border-collapse:collapse;} td{padding:6px 4px;border-bottom:1px solid var(--divider-color,#2a2a2a);}
   td.r{text-align:right;font-variant-numeric:tabular-nums;}
   .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px;}
+  .savebar{position:sticky;bottom:0;display:flex;gap:8px;align-items:center;margin-top:12px;padding:10px 0;background:var(--card-background-color,#1c1c1c);border-top:1px solid var(--divider-color,#333);}
+  .dirty{flex:1;text-align:right;color:#ffb300;font-size:13px;}
   .btn{padding:9px 14px;border:1px solid var(--divider-color,#444);border-radius:8px;background:var(--card-background-color,#1c1c1c);color:inherit;cursor:pointer;}
   .btn.primary{background:var(--primary-color,#03a9f4);color:#fff;border-color:transparent;}
   .btn.small{padding:5px 10px;font-size:13px;margin:4px 0 8px;}
