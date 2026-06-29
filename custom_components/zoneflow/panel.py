@@ -15,7 +15,7 @@ _LOGGER = logging.getLogger(__name__)
 
 PANEL_URL_PATH = "zoneflow"  # /zoneflow în bara laterală
 _STATIC_URL = "/zoneflow_frontend/zoneflow-panel.js"
-_PANEL_VERSION = "0.6.0"  # bump când se schimbă JS-ul (cache-busting)
+_PANEL_VERSION = "0.6.1"  # bump când se schimbă JS-ul (cache-busting)
 _REGISTERED = "panel_registered"
 
 
@@ -26,9 +26,13 @@ async def async_register_panel(hass: HomeAssistant) -> None:
         return
 
     js_path = Path(__file__).parent / "frontend" / "zoneflow-panel.js"
-    await hass.http.async_register_static_paths(
-        [StaticPathConfig(_STATIC_URL, str(js_path), False)]
-    )
+    try:
+        await hass.http.async_register_static_paths(
+            [StaticPathConfig(_STATIC_URL, str(js_path), False)]
+        )
+    except (RuntimeError, ValueError) as err:
+        # Calea poate fi deja înregistrată (ex. la un reload în aceeași sesiune) — ignorăm.
+        _LOGGER.debug("Calea statică ZoneFlow deja înregistrată: %s", err)
 
     await panel_custom.async_register_panel(
         hass,

@@ -70,16 +70,22 @@ async def async_unload_entry(hass: HomeAssistant, entry: ZoneFlowConfigEntry) ->
     coordinator = entry.runtime_data
     coordinator.async_shutdown_schedule()
     await coordinator.async_stop_watering()
-    unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    # NU scoatem panoul aici: `async_unload_entry` rulează și la fiecare reload (ex. după
+    # salvarea unei zone), iar eliminarea panoului vizibil ar redirecționa către dashboard.
+    # Panoul se scoate doar la ștergerea integrării — vezi `async_remove_entry`.
+    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
-    # Dacă a fost ultima intrare, scoatem panoul din bara laterală.
+
+async def async_remove_entry(hass: HomeAssistant, entry: ZoneFlowConfigEntry) -> None:
+    """Apelat DOAR la ștergerea integrării (nu la reload): scoatem panoul."""
     remaining = [
         e for e in hass.config_entries.async_entries(DOMAIN) if e.entry_id != entry.entry_id
     ]
     if not remaining:
         async_remove_panel(hass)
-
-    return unloaded
+        store = hass.data.get(DOMAIN, {})
+        store.pop("panel_registered", None)
+        store.pop("ws_registered", None)
 
 
 async def _async_reload_entry(hass: HomeAssistant, entry: ZoneFlowConfigEntry) -> None:
