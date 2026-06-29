@@ -10,7 +10,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from . import ZoneFlowConfigEntry
-from .const import VAL_DAY, VAL_ENABLED, WEEKDAY_NAMES, WEEKDAYS
+from .const import VAL_DAY, VAL_ENABLED, VAL_RAIN_COMP, WEEKDAY_NAMES, WEEKDAYS
 from .coordinator import ZoneFlowCoordinator
 from .entity import ZoneFlowEntity
 
@@ -28,7 +28,14 @@ async def async_setup_entry(
             name="Irigație activă",
             default=True,
             icon="mdi:power",
-        )
+        ),
+        ZoneFlowToggle(
+            coordinator,
+            value_key=VAL_RAIN_COMP,
+            name="Compensare ploaie",
+            default=True,
+            icon="mdi:weather-rainy",
+        ),
     ]
     for key in WEEKDAYS:
         entities.append(

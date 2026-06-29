@@ -55,12 +55,23 @@ Modificările se salvează la „Salvează și ieși", iar integrarea se reînca
 | --- | --- |
 | `number` | **Factor corecție** (scalează ținta) |
 | `time` | **Ora de udare** |
-| `switch` | **Irigație activă** + câte un comutator pentru fiecare zi (Luni…Duminică) |
+| `switch` | **Irigație activă**, **Compensare ploaie** + câte un comutator pentru fiecare zi (Luni…Duminică) |
 | `button` | **Udă acum**, **Oprește udarea** |
 | `binary_sensor` | **Udare în curs** |
-| `sensor` | media temperaturii, ținta (L/m²), **durata fiecărui circuit** (generat dinamic), apă pe sesiune (L), următoarea udare |
+| `sensor` | media temperaturii, ținta (L/m²), **ploaie prevăzută 24h**, **țintă efectivă (după ploaie)**, **durata fiecărui circuit** (generat dinamic), apă pe sesiune (L), următoarea udare |
 
 Suprafețele și valorile caserolelor se setează în **Configurează** (nu din dashboard).
+
+## Compensarea ploii
+
+Dacă se anunță ploaie, integrarea o **scade din țintă** (1 mm ploaie = 1 L/m²). Folosește
+prognoza **orară** a entității weather pe **următoarele 24h**, ponderând cantitatea cu
+probabilitatea (ex. 10 mm la 50% = 5 mm luați în calcul). Țintă efectivă = `țintă − ploaie`.
+Dacă ploaia prevăzută ≥ țintă, sesiunea se **sare** complet (toate duratele devin 0).
+
+Comutatorul **Compensare ploaie** o poate dezactiva (atunci se udă mereu la ținta din
+temperatură). Vezi `sensor` „Ploaie prevăzută (24h)" și „Țintă efectivă (după ploaie)".
+Se folosește doar prognoza (ploaia deja căzută nu e scăzută).
 
 ## Cum funcționează udarea
 

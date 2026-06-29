@@ -104,6 +104,35 @@ def weekly_avg(temps: Iterable[float | None]) -> float | None:
     return sum(vals) / len(vals)
 
 
+def weighted_precipitation(entries: Iterable[tuple]) -> float:
+    """Suma precipitațiilor prevăzute (mm), ponderate cu probabilitatea.
+
+    `entries` = iterabil de tupluri `(precipitation_mm, probability_pct)`. O probabilitate
+    `None` e tratată ca 100%. Valorile lipsă / negative sunt ignorate.
+    Ex.: (10 mm, 50%) contribuie cu 5 mm.
+    """
+    total = 0.0
+    for precip, prob in entries:
+        if precip is None:
+            continue
+        try:
+            p = float(precip)
+        except (TypeError, ValueError):
+            continue
+        if p <= 0:
+            continue
+        weight = 1.0 if prob is None else max(0.0, min(1.0, float(prob) / 100.0))
+        total += p * weight
+    return total
+
+
+def effective_target(target_mm: float | None, rain_mm: float) -> float | None:
+    """Ținta rămasă de udat după scăderea ploii prevăzute (1 mm ploaie = 1 L/m²)."""
+    if target_mm is None:
+        return None
+    return max(0.0, target_mm - max(0.0, rain_mm))
+
+
 def target_mm(
     avg_temp: float | None,
     factor: float = 1.0,

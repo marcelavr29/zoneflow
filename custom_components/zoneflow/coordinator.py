@@ -34,11 +34,13 @@ from .const import (
     DEFAULT_TEST_MINUTES,
     DOMAIN,
     MODE_OVERLAP,
+    RAIN_WINDOW_HOURS,
     ROLE_EDGE,
     ROLE_PRIMARY,
     VAL_DAY,
     VAL_ENABLED,
     VAL_FACTOR,
+    VAL_RAIN_COMP,
     VAL_START_TIME,
     WEEKDAYS,
 )
@@ -69,9 +71,10 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
             entry.data.get(CONF_FORECAST_DAYS, DEFAULT_FORECAST_DAYS)
         )
 
-        # Valori reglabile live (factor / enable / zile / oră), din entitățile dedicate.
+        # Valori reglabile live (factor / enable / zile / oră / compensare ploaie).
         self.values: dict[str, object] = {}
         self.avg_temp: float | None = None
+        self.rain_mm: float = 0.0  # ploaie prevăzută (ponderată) pe fereastra de 24h
 
         self.is_watering = False
         self._watering_task: asyncio.Task | None = None
@@ -157,14 +160,45 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
                     return None
         return None
 
+    async def _fetch_rain_mm(self) -> float:
+        """Ploaia prevăzută (mm, ponderată cu probabilitatea) pe următoarele ore."""
+        try:
+            resp = await self.hass.services.async_call(
+                "weather",
+                "get_forecasts",
+                {"entity_id": self.weather_entity, "type": "hourly"},
+                blocking=True,
+                return_response=True,
+            )
+        except Exception as err:  # noqa: BLE001 - unele entități nu au prognoză orară
+            _LOGGER.debug("Fără prognoză orară pentru ploaie (%s)", err)
+            return 0.0
+
+        forecasts = (resp or {}).get(self.weather_entity, {}).get("forecast", [])
+        now = dt_util.utcnow()
+        start = now - dt.timedelta(hours=1)  # includem ora curentă
+        horizon = now + dt.timedelta(hours=RAIN_WINDOW_HOURS)
+        entries = []
+        for item in forecasts:
+            when = dt_util.parse_datetime(item.get("datetime", ""))
+            if when is None:
+                continue
+            when = dt_util.as_utc(when)
+            if start <= when <= horizon:
+                entries.append(
+                    (item.get("precipitation"), item.get("precipitation_probability"))
+                )
+        return calc.weighted_precipitation(entries)
+
     async def _async_update_data(self) -> dict:
         self.avg_temp = await self._fetch_avg_temp()
+        self.rain_mm = await self._fetch_rain_mm()
         return self._build_data()
 
     # --------------------------------------------------------------- calcule
     def compute_runtimes(self) -> dict[str, float]:
-        """Timpii de rulare [minute] per circuit (cheie = id circuit), din ținta curentă."""
-        target = self._target()
+        """Timpii de rulare [minute] per circuit (cheie = id circuit), din ținta efectivă."""
+        target = self._effective_target()
         runtimes: dict[str, float] = {}
         if target is None:
             for circuit in self.circuits_in_order():
@@ -201,8 +235,16 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
                     )
         return runtimes
 
-    def _target(self) -> float | None:
+    def _gross_target(self) -> float | None:
+        """Ținta din temperatură, înainte de scăderea ploii."""
         return calc.target_mm(self.avg_temp, self.get_float(VAL_FACTOR, 1.0))
+
+    def _rain(self) -> float:
+        """Ploaia luată în calcul (0 dacă compensarea e dezactivată)."""
+        return self.rain_mm if self.get_bool(VAL_RAIN_COMP, True) else 0.0
+
+    def _effective_target(self) -> float | None:
+        return calc.effective_target(self._gross_target(), self._rain())
 
     def _session_liters(self, target: float | None, runtimes: dict[str, float]) -> float:
         if target is None:
@@ -224,13 +266,22 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
         return liters
 
     def _build_data(self) -> dict:
-        target = self._target()
+        gross = self._gross_target()
+        effective = self._effective_target()
         runtimes = self.compute_runtimes()
+        rain = self._rain()
+        will_skip = (
+            gross is not None and gross > 0 and effective is not None and effective <= 0
+        )
         return {
             "avg_temp": self.avg_temp,
-            "target_mm": target,
+            "target_mm": gross,
+            "effective_target_mm": effective,
+            "rain_mm": rain,
+            "rain_forecast_mm": self.rain_mm,
+            "will_skip": will_skip,
             "runtimes": runtimes,
-            "liters": self._session_liters(target, runtimes),
+            "liters": self._session_liters(effective, runtimes),
             "next_run": self._next_run(),
         }
 
@@ -302,6 +353,12 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
     async def _run_cycle(self) -> None:
         runtimes = self.compute_runtimes()
         circuits = self.circuits_in_order()
+        if not any(runtimes.get(c.get(CONF_ID), 0.0) > 0 for c in circuits):
+            _LOGGER.info(
+                "Sar peste udare: nimic de udat (ploaie prevăzută %.1f mm ≥ țintă, sau țintă 0)",
+                self._rain(),
+            )
+            return
         self.is_watering = True
         self.async_update_listeners()
         try:

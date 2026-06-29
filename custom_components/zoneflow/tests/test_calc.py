@@ -10,6 +10,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from calc import (  # noqa: E402
+    effective_target,
     overlap_delivered,
     precip_rate,
     runtime_edge,
@@ -17,6 +18,7 @@ from calc import (  # noqa: E402
     runtimes_overlap,
     target_mm,
     weekly_avg,
+    weighted_precipitation,
 )
 
 
@@ -90,6 +92,24 @@ def test_overlap_two_edges_uniform():
     for edge_depth, t_edge in ((8, t_e1), (4, t_e2)):
         delivered = precip_rate(6, 10) * t_primary + precip_rate(edge_depth, 10) * t_edge
         assert delivered == pytest.approx(q)
+
+
+def test_weighted_precipitation():
+    # 10mm la 50% -> 5; 4mm la 100% (None) -> 4; total 9
+    assert weighted_precipitation([(10, 50), (4, None)]) == pytest.approx(9.0)
+    # valori lipsă / negative ignorate
+    assert weighted_precipitation([(None, 80), (-2, 100), (6, 100)]) == pytest.approx(6.0)
+    assert weighted_precipitation([]) == 0.0
+    # probabilitate clamp la [0,100]
+    assert weighted_precipitation([(10, 150)]) == pytest.approx(10.0)
+
+
+def test_effective_target():
+    assert effective_target(25, 8) == pytest.approx(17.0)
+    assert effective_target(25, 30) == 0.0  # plouă mai mult decât ținta -> skip
+    assert effective_target(25, 0) == pytest.approx(25.0)
+    assert effective_target(None, 5) is None
+    assert effective_target(25, -3) == pytest.approx(25.0)  # ploaie negativă ignorată
 
 
 def test_weekly_avg():

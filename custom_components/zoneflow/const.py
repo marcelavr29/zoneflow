@@ -69,6 +69,10 @@ VAL_FACTOR = "factor"
 VAL_ENABLED = "enabled"
 VAL_START_TIME = "start_time"
 VAL_DAY = {key: f"day_{key}" for key in WEEKDAYS}
+VAL_RAIN_COMP = "rain_comp"  # compensarea ploii (scade ploaia prevăzută din țintă)
+
+# Fereastra de prognoză orară pentru ploaia luată în calcul.
+RAIN_WINDOW_HOURS = 24
 
 # Servicii
 SERVICE_RUN_NOW = "run_now"
