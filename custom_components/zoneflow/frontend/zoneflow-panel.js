@@ -363,24 +363,24 @@ class ZoneFlowPanel extends HTMLElement {
         return this._reload(true);
       }
       if (act === "save-general") {
-        const weather = this.shadowRoot.getElementById("weather").value;
-        const testmin = parseFloat(this.shadowRoot.getElementById("testmin").value) || 10;
-        const fdays = parseInt(this.shadowRoot.getElementById("fdays").value) || 7;
-        await this._ws({ type: "zoneflow/save_general", weather_entity: weather, test_minutes: testmin, forecast_days: fdays });
-        // ora + factor (entități)
         const c = this._data.controls || {};
-        const t = this.shadowRoot.getElementById("starttime").value;
-        if (c.start_time && t) await this._hass.callService("time", "set_value", { entity_id: c.start_time, time: t.length === 5 ? t + ":00" : t });
-        const f = this.shadowRoot.getElementById("factor").value;
-        if (c.factor && f !== "") await this._hass.callService("number", "set_value", { entity_id: c.factor, value: parseFloat(f) });
         const setNum = async (eid, id) => {
           const v = this.shadowRoot.getElementById(id);
           if (eid && v && v.value !== "") await this._hass.callService("number", "set_value", { entity_id: eid, value: parseFloat(v.value) });
         };
+        // 1) Întâi setăm entitățile (ora + numere), ca să nu se piardă la reload.
+        const t = this.shadowRoot.getElementById("starttime").value;
+        if (c.start_time && t) await this._hass.callService("time", "set_value", { entity_id: c.start_time, time: t.length === 5 ? t + ":00" : t });
         await setNum(c.target, "target");
+        await setNum(c.factor, "factor");
         await setNum(c.interval, "interval");
         await setNum(c.max_cycle, "maxcycle");
         await setNum(c.soak, "soak");
+        // 2) Apoi setările generale (weather/test/forecast) — declanșează reload, la final.
+        const weather = this.shadowRoot.getElementById("weather").value;
+        const testmin = parseFloat(this.shadowRoot.getElementById("testmin").value) || 10;
+        const fdays = parseInt(this.shadowRoot.getElementById("fdays").value) || 7;
+        await this._ws({ type: "zoneflow/save_general", weather_entity: weather, test_minutes: testmin, forecast_days: fdays });
         this._toast("Setările au fost salvate.");
         return this._reload(true);
       }
