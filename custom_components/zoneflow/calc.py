@@ -104,6 +104,52 @@ def weekly_avg(temps: Iterable[float | None]) -> float | None:
     return sum(vals) / len(vals)
 
 
+def solve_runtimes(rate_matrix: list[list[float]], target: float | None) -> list[float]:
+    """Timpii de rulare [min] per grup, ca fiecare porțiune să primească `target` (mm).
+
+    `rate_matrix` = o listă de rânduri (câte una per porțiune); fiecare rând conține rata de
+    precipitație PR (mm/min) a fiecărui grup pe acea porțiune, în aceeași ordine de grupuri
+    (0 dacă grupul nu udă porțiunea). Se rezolvă sistemul `A · t = target` în sens
+    least-squares, cu constrângerea `t ≥ 0` (un grup nu poate rula timp negativ).
+
+    Generalizează totul:
+    - 1 porțiune / 1 grup  → `t = target / PR`;
+    - matrice diagonală    → fiecare grup independent;
+    - sisteme 2×2          → cazul mijloc/margine (acoperire uniformă).
+    """
+    n_groups = len(rate_matrix[0]) if rate_matrix and rate_matrix[0] else 0
+    if n_groups == 0 or target is None or target <= 0:
+        return [0.0] * n_groups
+
+    import numpy as np
+
+    full = np.array(rate_matrix, dtype=float)
+    b = np.full(full.shape[0], float(target))
+    active = list(range(n_groups))
+    result = [0.0] * n_groups
+
+    # Active-set simplu: rezolvă, iar dacă un timp iese negativ scoate grupul și re-rezolvă.
+    while active:
+        sol, *_ = np.linalg.lstsq(full[:, active], b, rcond=None)
+        if np.all(sol >= -1e-9):
+            for idx, group in enumerate(active):
+                result[group] = max(0.0, float(sol[idx]))
+            break
+        worst_local = int(np.argmin(sol))
+        active.pop(worst_local)
+
+    return result
+
+
+def coverage(rate_matrix: list[list[float]], runtimes: list[float]) -> list[float]:
+    """Apa livrată [mm] pe fiecare porțiune pentru timpii dați (= A · t) — pt. diagnostic."""
+    if not rate_matrix or not rate_matrix[0]:
+        return []
+    import numpy as np
+
+    return (np.array(rate_matrix, dtype=float) @ np.array(runtimes, dtype=float)).tolist()
+
+
 def weighted_precipitation(entries: Iterable[tuple]) -> float:
     """Suma precipitațiilor prevăzute (mm), ponderate cu probabilitatea.
 

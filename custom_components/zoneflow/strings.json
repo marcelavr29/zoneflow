@@ -13,9 +13,6 @@
     }
   },
   "options": {
-    "error": {
-      "primary_exists": "The zone already has a primary circuit. An overlapping zone can have only one primary."
-    },
     "step": {
       "init": {
         "title": "ZoneFlow — configuration",
@@ -32,49 +29,52 @@
       },
       "add_zone": {
         "title": "Add zone",
-        "data": {"name": "Zone name", "mode": "Zone type"}
+        "description": "A default section \"Whole zone\" is created; you can split it later.",
+        "data": {"name": "Zone name"}
       },
-      "edit_zone": {
-        "title": "Pick zone",
-        "data": {"zone": "Zone"}
-      },
+      "edit_zone": {"title": "Pick zone", "data": {"zone": "Zone"}},
       "zone_menu": {
         "title": "Zone: {zone}",
-        "description": "Circuits:\n{circuits}",
+        "description": "Sections: {sections}\nGroups:\n{groups}",
         "data": {"action": "What do you want to do?"}
       },
-      "rename_zone": {
-        "title": "Edit zone",
-        "data": {"name": "Zone name", "mode": "Zone type"}
+      "rename_zone": {"title": "Rename zone", "data": {"name": "Zone name"}},
+      "sections": {
+        "title": "Sections",
+        "description": "{sections}",
+        "data": {"action": "What do you want to do?"}
       },
-      "edit_circuit": {
-        "title": "Pick circuit",
-        "data": {"circuit": "Circuit", "delete": "Delete selected circuit"}
+      "add_section": {
+        "title": "Add section",
+        "data": {"name": "Section name", "area": "Area (m²)"}
       },
-      "circuit_basic": {
-        "title": "Circuit (zone {zone})",
-        "data": {
-          "name": "Circuit name",
-          "switch": "Switch (valve)",
-          "area": "Area (m²)",
-          "role": "Role in zone"
-        }
+      "edit_section": {
+        "title": "Pick section",
+        "data": {"section": "Section", "delete": "Delete selected section"}
       },
-      "circuit_depths": {
-        "title": "Catch-cup values (mm / test)",
-        "description": "Water depth collected in the catch cup during the test. 1 mm = 1 L/m².",
-        "data": {
-          "depth": "Catch cup (mm)",
-          "depth_inner": "Primary catch cup — inner (mm)",
-          "depth_margin": "Primary catch cup — margin (mm)"
-        }
+      "section_form": {
+        "title": "Edit section",
+        "data": {"name": "Section name", "area": "Area (m²)"}
+      },
+      "edit_group": {
+        "title": "Pick group",
+        "data": {"group": "Group", "delete": "Delete selected group"}
+      },
+      "group_basic": {
+        "title": "Group (zone {zone})",
+        "description": "Pick the valves that turn on TOGETHER in this group.",
+        "data": {"name": "Group name", "switches": "Valves (run simultaneously)"}
+      },
+      "group_rates": {
+        "title": "Group \"{group}\" catch-cup values (mm / test)",
+        "description": "How many mm the group (all its valves on) applies to each section during the catch-cup test. 0 if it doesn't reach there."
       }
     }
   },
   "services": {
     "run_now": {
       "name": "Water now",
-      "description": "Immediately start a sequential watering cycle with the currently computed durations."
+      "description": "Immediately start a watering cycle with the currently computed durations."
     },
     "stop": {
       "name": "Stop watering",

@@ -15,28 +15,21 @@ from homeassistant.util import dt as dt_util
 from . import calc
 from .const import (
     CONF_AREA,
-    CONF_CIRCUITS,
-    CONF_DEPTH,
-    CONF_DEPTH_INNER,
-    CONF_DEPTH_MARGIN,
     CONF_FORECAST_DAYS,
+    CONF_GROUPS,
     CONF_ID,
-    CONF_MODE,
     CONF_NAME,
-    CONF_ROLE,
-    CONF_SWITCH,
+    CONF_RATES,
+    CONF_SECTIONS,
+    CONF_SWITCHES,
     CONF_TEST_MINUTES,
     CONF_WEATHER_ENTITY,
     CONF_ZONES,
     DEFAULT_AREA,
-    DEFAULT_DEPTH,
     DEFAULT_FORECAST_DAYS,
     DEFAULT_TEST_MINUTES,
     DOMAIN,
-    MODE_OVERLAP,
     RAIN_WINDOW_HOURS,
-    ROLE_EDGE,
-    ROLE_PRIMARY,
     VAL_DAY,
     VAL_ENABLED,
     VAL_FACTOR,
@@ -85,31 +78,32 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
     def zones(self) -> list[dict]:
         return self.entry.options.get(CONF_ZONES, [])
 
-    def circuits_in_order(self) -> list[dict]:
-        """Lista plată de circuite în ordinea de udare, adnotate cu zona.
+    def groups_in_order(self) -> list[dict]:
+        """Lista plată de grupuri în ordinea de udare (zone în ordine, grupuri în ordine).
 
-        În fiecare zonă: primarul rulează primul, apoi circuitele margine, apoi cele simple.
         Fiecare element conține și `zone_name` + `display_name` pentru entități/loguri.
+        Grupurile rulează secvențial; supapele dintr-un grup pornesc simultan.
         """
         ordered: list[dict] = []
         for zone in self.zones:
-            circuits = list(zone.get(CONF_CIRCUITS, []))
-            circuits.sort(key=lambda c: {ROLE_PRIMARY: 0, ROLE_EDGE: 1}.get(c.get(CONF_ROLE), 2))
-            for circuit in circuits:
+            for group in zone.get(CONF_GROUPS, []):
                 ordered.append(
                     {
-                        **circuit,
+                        **group,
                         "zone_name": zone.get(CONF_NAME, ""),
-                        "display_name": f"{zone.get(CONF_NAME, '')} · {circuit.get(CONF_NAME, '')}",
+                        "display_name": f"{zone.get(CONF_NAME, '')} · {group.get(CONF_NAME, '')}",
                     }
                 )
         return ordered
 
-    def switch_for(self, circuit_id: str) -> str | None:
-        for circuit in self.circuits_in_order():
-            if circuit.get(CONF_ID) == circuit_id:
-                return circuit.get(CONF_SWITCH)
-        return None
+    def all_switches(self) -> list[str]:
+        """Toate entity_id-urile de switch din toate grupurile (unice)."""
+        seen: list[str] = []
+        for group in self.groups_in_order():
+            for switch in group.get(CONF_SWITCHES, []):
+                if switch and switch not in seen:
+                    seen.append(switch)
+        return seen
 
     # ------------------------------------------------------------------ utils
     def get_float(self, key: str, default: float = 0.0) -> float:
@@ -197,42 +191,35 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
 
     # --------------------------------------------------------------- calcule
     def compute_runtimes(self) -> dict[str, float]:
-        """Timpii de rulare [minute] per circuit (cheie = id circuit), din ținta efectivă."""
+        """Timpii de rulare [minute] per grup (cheie = id grup), din ținta efectivă.
+
+        Per zonă rezolvă sistemul porțiuni × grupuri (`calc.solve_runtimes`), astfel încât
+        fiecare porțiune să primească ținta.
+        """
         target = self._effective_target()
         runtimes: dict[str, float] = {}
-        if target is None:
-            for circuit in self.circuits_in_order():
-                runtimes[circuit.get(CONF_ID)] = 0.0
-            return runtimes
 
         for zone in self.zones:
-            circuits = zone.get(CONF_CIRCUITS, [])
-            if zone.get(CONF_MODE) == MODE_OVERLAP:
-                primary = next(
-                    (c for c in circuits if c.get(CONF_ROLE) == ROLE_PRIMARY), None
-                )
-                t_primary = 0.0
-                margin_depth = 0.0
-                if primary is not None:
-                    t_primary = calc.runtime_simple(
-                        target, _num(primary.get(CONF_DEPTH_INNER), DEFAULT_DEPTH), self.test_minutes
+            sections = zone.get(CONF_SECTIONS, [])
+            groups = zone.get(CONF_GROUPS, [])
+            for group in groups:
+                runtimes[group.get(CONF_ID)] = 0.0
+            if not sections or not groups or target is None:
+                continue
+            # A[porțiune][grup] = rata de precipitație (mm/min) a grupului pe acea porțiune.
+            matrix = [
+                [
+                    calc.precip_rate(
+                        _num(group.get(CONF_RATES, {}).get(section.get(CONF_ID)), 0.0),
+                        self.test_minutes,
                     )
-                    margin_depth = _num(primary.get(CONF_DEPTH_MARGIN), DEFAULT_DEPTH)
-                    runtimes[primary.get(CONF_ID)] = t_primary
-                for circuit in circuits:
-                    if circuit.get(CONF_ROLE) == ROLE_EDGE:
-                        runtimes[circuit.get(CONF_ID)] = calc.runtime_edge(
-                            target,
-                            t_primary,
-                            margin_depth,
-                            _num(circuit.get(CONF_DEPTH), DEFAULT_DEPTH),
-                            self.test_minutes,
-                        )
-            else:
-                for circuit in circuits:
-                    runtimes[circuit.get(CONF_ID)] = calc.runtime_simple(
-                        target, _num(circuit.get(CONF_DEPTH), DEFAULT_DEPTH), self.test_minutes
-                    )
+                    for group in groups
+                ]
+                for section in sections
+            ]
+            solved = calc.solve_runtimes(matrix, target)
+            for group, minutes in zip(groups, solved):
+                runtimes[group.get(CONF_ID)] = minutes
         return runtimes
 
     def _gross_target(self) -> float | None:
@@ -247,23 +234,15 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
         return calc.effective_target(self._gross_target(), self._rain())
 
     def _session_liters(self, target: float | None, runtimes: dict[str, float]) -> float:
+        """Litri pe sesiune ≈ ținta × suma suprafețelor tuturor porțiunilor."""
         if target is None:
             return 0.0
-        liters = 0.0
-        for zone in self.zones:
-            for circuit in zone.get(CONF_CIRCUITS, []):
-                area = _num(circuit.get(CONF_AREA), DEFAULT_AREA)
-                if circuit.get(CONF_ROLE) == ROLE_EDGE:
-                    # Edge-ul adaugă apă suplimentară pe sub-zona lui.
-                    liters += (
-                        calc.precip_rate(_num(circuit.get(CONF_DEPTH), DEFAULT_DEPTH), self.test_minutes)
-                        * runtimes.get(circuit.get(CONF_ID), 0.0)
-                        * area
-                    )
-                else:
-                    # Primar / simplu: livrează ținta peste suprafața lui.
-                    liters += target * area
-        return liters
+        total_area = sum(
+            _num(section.get(CONF_AREA), DEFAULT_AREA)
+            for zone in self.zones
+            for section in zone.get(CONF_SECTIONS, [])
+        )
+        return target * total_area
 
     def _build_data(self) -> dict:
         gross = self._gross_target()
@@ -352,8 +331,8 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
 
     async def _run_cycle(self) -> None:
         runtimes = self.compute_runtimes()
-        circuits = self.circuits_in_order()
-        if not any(runtimes.get(c.get(CONF_ID), 0.0) > 0 for c in circuits):
+        groups = self.groups_in_order()
+        if not any(runtimes.get(g.get(CONF_ID), 0.0) > 0 for g in groups):
             _LOGGER.info(
                 "Sar peste udare: nimic de udat (ploaie prevăzută %.1f mm ≥ țintă, sau țintă 0)",
                 self._rain(),
@@ -362,12 +341,12 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
         self.is_watering = True
         self.async_update_listeners()
         try:
-            for circuit in circuits:
-                minutes = runtimes.get(circuit.get(CONF_ID), 0.0)
-                switch_entity = circuit.get(CONF_SWITCH)
-                if minutes <= 0 or not switch_entity:
+            for group in groups:
+                minutes = runtimes.get(group.get(CONF_ID), 0.0)
+                switches = [s for s in group.get(CONF_SWITCHES, []) if s]
+                if minutes <= 0 or not switches:
                     continue
-                await self._run_circuit(switch_entity, minutes)
+                await self._run_group(switches, minutes)
         except asyncio.CancelledError:
             _LOGGER.info("Ciclu de udare anulat")
             raise
@@ -377,33 +356,31 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
             self._watering_task = None
             self.async_update_listeners()
 
-    async def _run_circuit(self, switch_entity: str, minutes: float) -> None:
-        _LOGGER.info("Pornesc %s pentru %.1f min", switch_entity, minutes)
+    async def _run_group(self, switches: list[str], minutes: float) -> None:
+        """Pornește toate supapele grupului SIMULTAN, așteaptă, apoi le oprește."""
+        _LOGGER.info("Pornesc grupul %s pentru %.1f min", switches, minutes)
         await self.hass.services.async_call(
-            "switch", "turn_on", {"entity_id": switch_entity}, blocking=True
+            "switch", "turn_on", {"entity_id": switches}, blocking=True
         )
         try:
             await asyncio.sleep(minutes * 60)
         finally:
-            # Oprim circuitul chiar dacă ciclul a fost anulat în timpul așteptării.
+            # Oprim grupul chiar dacă ciclul a fost anulat în timpul așteptării.
             await self.hass.services.async_call(
-                "switch", "turn_off", {"entity_id": switch_entity}, blocking=True
+                "switch", "turn_off", {"entity_id": switches}, blocking=True
             )
 
     async def async_all_off(self) -> None:
         """Oprește toate supapele (siguranță)."""
-        seen: set[str] = set()
-        for circuit in self.circuits_in_order():
-            switch_entity = circuit.get(CONF_SWITCH)
-            if not switch_entity or switch_entity in seen:
-                continue
-            seen.add(switch_entity)
-            try:
-                await self.hass.services.async_call(
-                    "switch", "turn_off", {"entity_id": switch_entity}, blocking=True
-                )
-            except Exception as err:  # noqa: BLE001
-                _LOGGER.debug("Nu pot opri %s: %s", switch_entity, err)
+        switches = self.all_switches()
+        if not switches:
+            return
+        try:
+            await self.hass.services.async_call(
+                "switch", "turn_off", {"entity_id": switches}, blocking=True
+            )
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("Nu pot opri supapele %s: %s", switches, err)
 
     @callback
     def async_shutdown_schedule(self) -> None:

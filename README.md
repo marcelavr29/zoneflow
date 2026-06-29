@@ -12,24 +12,26 @@ precipitație măsurată pe teren).
   (Sursa temperaturii e o integrare *weather* prin prognoză; poți scala cu un *factor*.)
 - Timpul de rulare = `țintă / rată_precipitație`.
 
-## Zone și circuite (configurabile)
+## Model: zone → porțiuni + grupuri
 
-Topologia e **dinamică**: definești **oricâte zone**, fiecare cu **oricâte circuite**. Fiecare
-zonă are un **mod**:
+Un singur mod de gândire, valabil pentru orice grădină:
 
-- **Independentă** – fiecare circuit udă propria suprafață. Rulează cât să livreze ținta:
-  `runtime = țintă / rată_precipitație`.
-- **Suprapusă** – un circuit **primar** acoperă toată zona, plus **oricâte circuite „margine"**
-  care completează sub-zone unde primarul udă insuficient:
-  - zona **interioară** primește apă **doar** din primar → primarul rulează cât să atingă ținta
-    acolo (`depth_inner`);
-  - pe **margine**, primarul udă mai slab (`depth_margin`, sub țintă), iar fiecare circuit
-    margine **completează deficitul** ca toată zona să primească aceeași cantitate.
+- **Zonă** = o parte a grădinii, împărțită în una sau mai multe **porțiuni** (sub-zone care
+  trebuie să primească aceeași țintă `Q`). De obicei o singură porțiune („Toată zona"); uneori
+  2–3 (ex. „interior" și „margine").
+- **Grup** = una sau mai multe **supape care pornesc deodată** și pe care le-ai măsurat
+  împreună la testul cu caserole. Pentru fiecare grup dai **rata (mm/test) pe fiecare porțiune**
+  (0 dacă nu ajunge acolo).
+- **Grupurile rulează secvențial** (pentru presiune constantă); **supapele dintr-un grup rulează
+  simultan**. ZoneFlow calculează cât rulează fiecare grup astfel încât **fiecare porțiune** să
+  primească ținta (mic sistem liniar, rezolvat automat).
 
-  De aceea pentru o zonă suprapusă măsori caserolele **pe poziții**: primar-interior,
-  primar-margine și fiecare margine pe sub-zona ei.
-
-Cazul „mijloc + margine" e exact o zonă suprapusă cu **un singur** circuit margine.
+Acoperă orice configurație:
+- **Față** (2 supape care stropesc tot dreptunghiul, pornite deodată, testate împreună):
+  1 porțiune + **1 grup** cu ambele supape și o rată → grupul rulează cât să dea ținta.
+- **Spate** (mijloc + margine): 2 porțiuni („interior", „margine") + 2 grupuri (mijloc; margine)
+  → acoperire uniformă, rulate pe rând.
+- **Circuite separate**: câte un grup (și o porțiune) fiecare.
 
 Formulele trăiesc în [`calc.py`](custom_components/zoneflow/calc.py) (modul pur, testat).
 
@@ -39,15 +41,19 @@ Formulele trăiesc în [`calc.py`](custom_components/zoneflow/calc.py) (modul pu
 2. Repornește Home Assistant.
 3. **Setări → Dispozitive și servicii → Adaugă integrare → „ZoneFlow"** și alege entitatea
    *weather*, durata testului (implicit 10 min) și câte zile de prognoză mediezi (implicit 7).
-4. Pe cardul integrării apasă **Configurează** și adaugă zonele și circuitele (vezi mai jos).
+4. Pe cardul integrării apasă **Configurează** și adaugă zonele (vezi mai jos).
 
 ## Configurarea zonelor (butonul „Configurează")
 
-Meniu cu: **Setări generale**, **Adaugă zonă**, **Editează / șterge zonă**, **Salvează și ieși**.
-La fiecare zonă: redenumire/mod, **Adaugă circuit**, **Editează / șterge circuit**.
-Pentru fiecare circuit introduci: nume, **switch** (supapa), **suprafață (m²)**, **rolul**
-(la zone suprapuse: primar/margine) și **valorile caserolelor (mm)** corespunzătoare rolului.
-Modificările se salvează la „Salvează și ieși", iar integrarea se reîncarcă și recalculează.
+Meniu: **Setări generale**, **Adaugă zonă**, **Editează / șterge zonă**, **Salvează și ieși**.
+Per zonă: redenumește, **Gestionează porțiuni** (nume + m²), **Adaugă/Editează/Șterge grup**.
+La crearea zonei se face automat o porțiune „Toată zona" (zonele simple sunt gata imediat).
+Pentru un **grup** alegi: nume, **supapele** care pornesc deodată, apoi **rata (mm)** pe fiecare
+porțiune. Modificările se aplică la **„Salvează și ieși"** (integrarea se reîncarcă).
+
+Exemplu *Față*: o porțiune; un grup cu ambele supape; o rată (cea măsurată cu ambele pornite).
+Exemplu *Spate*: două porțiuni (Interior, Margine); grup „Mijloc" cu rată în ambele, grup
+„Margine" cu rată doar în Margine.
 
 ## Ce reglezi din dashboard (entități live)
 
@@ -58,9 +64,9 @@ Modificările se salvează la „Salvează și ieși", iar integrarea se reînca
 | `switch` | **Irigație activă**, **Compensare ploaie** + câte un comutator pentru fiecare zi (Luni…Duminică) |
 | `button` | **Udă acum**, **Oprește udarea** |
 | `binary_sensor` | **Udare în curs** |
-| `sensor` | media temperaturii, ținta (L/m²), **ploaie prevăzută 24h**, **țintă efectivă (după ploaie)**, **durata fiecărui circuit** (generat dinamic), apă pe sesiune (L), următoarea udare |
+| `sensor` | media temperaturii, ținta (L/m²), **ploaie prevăzută 24h**, **țintă efectivă (după ploaie)**, **durata fiecărui grup** (generat dinamic), apă pe sesiune (L), următoarea udare |
 
-Suprafețele și valorile caserolelor se setează în **Configurează** (nu din dashboard).
+Porțiunile (m²) și ratele caserolelor se setează în **Configurează** (nu din dashboard).
 
 ## Compensarea ploii
 
@@ -76,10 +82,10 @@ Se folosește doar prognoza (ploaia deja căzută nu e scăzută).
 ## Cum funcționează udarea
 
 La **ora** setată, în **zilele** bifate, dacă **Irigație activă** e pornit, integrarea
-recalculează timpii din ținta curentă și pornește circuitele **secvențial**, zonă cu zonă
-(în fiecare zonă suprapusă primarul rulează înaintea circuitelor margine), pentru presiune
-constantă. Butonul **Oprește udarea** (sau dezactivarea) anulează ciclul și închide toate
-supapele. La pornirea HA, toate supapele sunt închise preventiv.
+recalculează timpii din ținta curentă și parcurge **grupurile secvențial**, zonă cu zonă.
+La fiecare grup pornește **toate supapele lui simultan**, așteaptă durata calculată, apoi le
+oprește și trece la grupul următor. Butonul **Oprește udarea** (sau dezactivarea) anulează
+ciclul și închide toate supapele. La pornirea HA, toate supapele sunt închise preventiv.
 
 Servicii disponibile: `zoneflow.run_now`, `zoneflow.stop`.
 
@@ -94,7 +100,7 @@ pytest custom_components/zoneflow/tests/test_calc.py -q
 ## Presupuneri
 
 - Un singur program global (aceeași oră/zile pentru toate zonele).
-- Într-o zonă suprapusă, rata primarului pe margine (`depth_margin`) e considerată aceeași
-  pentru toate circuitele margine (suficient pentru cazul real; per-margine se poate adăuga).
+- Grupurile rulează secvențial; doar supapele din același grup pornesc simultan.
 - „Săptămâna în curs" ≈ media prognozei pe următoarele N zile (configurabil).
-- Fără *rain-skip* / senzor de ploaie (posibilă extindere).
+- Acoperirea uniformă se rezolvă în sens least-squares; la configurații imposibile (o porțiune
+  pe care n-o atinge niciun grup) rezultatul e aproximativ — vezi durata fiecărui grup.

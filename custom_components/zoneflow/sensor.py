@@ -106,16 +106,16 @@ async def async_setup_entry(
     entities: list[SensorEntity] = [
         ZoneFlowSensor(coordinator, definition) for definition in _GLOBAL_DEFS
     ]
-    # Câte un senzor de durată pentru fiecare circuit configurat.
-    for circuit in coordinator.circuits_in_order():
-        cid = circuit.get(CONF_ID)
+    # Câte un senzor de durată pentru fiecare grup configurat.
+    for group in coordinator.groups_in_order():
+        gid = group.get(CONF_ID)
         entities.append(
             ZoneFlowSensor(
                 coordinator,
                 ZoneFlowSensorDef(
-                    key=f"{cid}_runtime",
-                    name=f"Durată · {circuit.get('display_name', cid)}",
-                    value_fn=_runtime_value(cid),
+                    key=f"{gid}_runtime",
+                    name=f"Durată · {group.get('display_name', gid)}",
+                    value_fn=_runtime_value(gid),
                     unit=UnitOfTime.MINUTES,
                     icon="mdi:timer-sand",
                     suggested_precision=1,

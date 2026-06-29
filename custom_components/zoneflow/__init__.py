@@ -7,7 +7,7 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import entity_registry as er
 
 from .const import (
-    CONF_CIRCUITS,
+    CONF_GROUPS,
     CONF_ID,
     CONF_ZONES,
     DOMAIN,
@@ -44,11 +44,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ZoneFlowConfigEntry) -> 
 
 
 def _async_cleanup_orphans(hass: HomeAssistant, entry: ZoneFlowConfigEntry) -> None:
-    """Șterge senzorii de durată ai circuitelor care nu mai există în configurație."""
+    """Șterge senzorii de durată ai grupurilor care nu mai există în configurație."""
     valid_ids = {
-        circuit.get(CONF_ID)
+        group.get(CONF_ID)
         for zone in entry.options.get(CONF_ZONES, [])
-        for circuit in zone.get(CONF_CIRCUITS, [])
+        for group in zone.get(CONF_GROUPS, [])
     }
     registry = er.async_get(hass)
     prefix = f"{entry.entry_id}_"

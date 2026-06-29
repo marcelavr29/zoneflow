@@ -24,33 +24,28 @@ DEFAULT_TEST_MINUTES = 10
 DEFAULT_FORECAST_DAYS = 7
 
 # --- Topologie dinamică (entry.options) ---------------------------------------
-# entry.options[CONF_ZONES] = listă de zone; fiecare zonă: id, name, mode, circuits[].
+# entry.options[CONF_ZONES] = listă de zone. Schema v3:
+#   zone: {id, name, sections: [{id, name, area}], groups: [{id, name, switches[], rates{}}]}
+# - porțiune (section) = sub-zonă care trebuie să primească ținta Q;
+# - grup (group) = una sau mai multe supape care pornesc DEODATĂ, cu rata (mm/test) per porțiune.
 CONF_ZONES = "zones"
 
-# Chei câmpuri zonă / circuit.
+# Chei comune / zonă.
 CONF_ID = "id"
 CONF_NAME = "name"
-CONF_MODE = "mode"
-CONF_CIRCUITS = "circuits"
-CONF_SWITCH = "switch"
-CONF_AREA = "area"
-CONF_ROLE = "role"
-CONF_DEPTH = "depth"  # circuit simple sau edge: mm / test pe suprafața lui
-CONF_DEPTH_INNER = "depth_inner"  # primar: mm / test pe zona interioară (doar primar)
-CONF_DEPTH_MARGIN = "depth_margin"  # primar: mm / test pe sub-zonele acoperite de edge-uri
 
-# Moduri zonă.
-MODE_INDEPENDENT = "independent"
-MODE_OVERLAP = "overlap"
-ZONE_MODES = [MODE_INDEPENDENT, MODE_OVERLAP]
+# Porțiuni.
+CONF_SECTIONS = "sections"
+CONF_AREA = "area"  # m² ai porțiunii
 
-# Roluri circuit.
-ROLE_SIMPLE = "simple"  # zonă independentă
-ROLE_PRIMARY = "primary"  # zonă overlap: acoperă toată zona
-ROLE_EDGE = "edge"  # zonă overlap: completează o sub-zonă
+# Grupuri.
+CONF_GROUPS = "groups"
+CONF_SWITCHES = "switches"  # listă de entity_id-uri de switch pornite simultan
+CONF_RATES = "rates"  # {section_id: mm / test} — măsurat cu tot grupul pornit
 
 DEFAULT_DEPTH = 10.0
 DEFAULT_AREA = 0.0
+DEFAULT_SECTION_NAME = "Toată zona"
 
 # --- Zile săptămână (datetime.weekday(): 0 = luni) ----------------------------
 WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]

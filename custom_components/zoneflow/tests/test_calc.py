@@ -10,12 +10,14 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from calc import (  # noqa: E402
+    coverage,
     effective_target,
     overlap_delivered,
     precip_rate,
     runtime_edge,
     runtime_simple,
     runtimes_overlap,
+    solve_runtimes,
     target_mm,
     weekly_avg,
     weighted_precipitation,
@@ -92,6 +94,47 @@ def test_overlap_two_edges_uniform():
     for edge_depth, t_edge in ((8, t_e1), (4, t_e2)):
         delivered = precip_rate(6, 10) * t_primary + precip_rate(edge_depth, 10) * t_edge
         assert delivered == pytest.approx(q)
+
+
+def test_solve_single_group():
+    # 1 porțiune, 1 grup: 8mm/10min = 0.8 mm/min, țintă 20 -> 25 min
+    rt = solve_runtimes([[0.8]], 20)
+    assert rt == pytest.approx([25.0])
+    assert coverage([[0.8]], rt) == pytest.approx([20.0])
+
+
+def test_solve_two_groups_same_section_sum():
+    # Fața: 1 porțiune, 2 grupuri (ambele 0.8) -> împart, însumează ținta
+    rt = solve_runtimes([[0.8, 0.8]], 20)
+    assert coverage([[0.8, 0.8]], rt) == pytest.approx([20.0])
+    assert rt[0] == pytest.approx(rt[1])  # simetric
+
+
+def test_solve_two_sections_mid_margin():
+    # Spate: porțiuni [interior, margine], grupuri [mijloc, margine]
+    A = [[1.0, 0.0], [0.6, 0.8]]
+    rt = solve_runtimes(A, 20)
+    assert rt == pytest.approx([20.0, 10.0])
+    assert coverage(A, rt) == pytest.approx([20.0, 20.0])
+
+
+def test_solve_diagonal_independent():
+    rt = solve_runtimes([[1.0, 0.0], [0.0, 0.5]], 20)
+    assert rt == pytest.approx([20.0, 40.0])
+
+
+def test_solve_clamps_negative():
+    # Soluția exactă ar cere un timp negativ -> grupul respectiv devine 0
+    A = [[1.0, 1.0], [1.0, 2.0]]
+    rt = solve_runtimes(A, 20)
+    assert rt[1] == 0.0
+    assert rt[0] >= 0.0
+
+
+def test_solve_no_groups_or_zero_target():
+    assert solve_runtimes([], 20) == []
+    assert solve_runtimes([[0.8, 0.5]], 0) == [0.0, 0.0]
+    assert solve_runtimes([[0.8, 0.5]], None) == [0.0, 0.0]
 
 
 def test_weighted_precipitation():
