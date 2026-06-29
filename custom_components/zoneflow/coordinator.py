@@ -73,17 +73,24 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
             entry.data.get(CONF_FORECAST_DAYS, DEFAULT_FORECAST_DAYS)
         )
 
+        # Cache în memorie (supraviețuiește reload-ului intrării, NU și restartului HA) —
+        # ca media temperaturii/ploaia/ultima udare să nu apară „—" imediat după un reload
+        # (ex. la salvarea unei zone), până se reface prima interogare.
+        self._cache: dict = hass.data.setdefault(DOMAIN, {}).setdefault(
+            f"cache_{entry.entry_id}", {}
+        )
+
         # Valori reglabile live (factor / enable / oră / interval / compensare ploaie).
         self.values: dict[str, object] = {}
-        self.avg_temp: float | None = None
-        self.rain_mm: float = 0.0  # ploaie prevăzută (ponderată) pe fereastra de 24h
+        self.avg_temp: float | None = self._cache.get("avg_temp")
+        self.rain_mm: float = self._cache.get("rain_mm", 0.0)
 
         self.is_watering = False
         self._watering_task: asyncio.Task | None = None
         self._unsub_time: CALLBACK_TYPE | None = None
 
         # Data ultimei udări reale (persistată) — baza intervalului între udări.
-        self.last_run: dt.date | None = None
+        self.last_run: dt.date | None = self._cache.get("last_run")
         self._store: Store = Store(hass, 1, f"{DOMAIN}_{entry.entry_id}")
 
     async def async_load_store(self) -> None:
@@ -98,8 +105,10 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
         if self.last_run is None:
             self.last_run = dt_util.now().date()
             await self._save_last_run()
+        self._cache["last_run"] = self.last_run
 
     async def _save_last_run(self) -> None:
+        self._cache["last_run"] = self.last_run
         await self._store.async_save(
             {"last_run": self.last_run.isoformat() if self.last_run else None}
         )
@@ -220,6 +229,10 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
     async def _async_update_data(self) -> dict:
         self.avg_temp = await self._fetch_avg_temp()
         self.rain_mm = await self._fetch_rain_mm()
+        # Salvăm în cache ca un reload ulterior să nu pornească cu valori goale.
+        if self.avg_temp is not None:
+            self._cache["avg_temp"] = self.avg_temp
+        self._cache["rain_mm"] = self.rain_mm
         return self._build_data()
 
     # --------------------------------------------------------------- calcule
