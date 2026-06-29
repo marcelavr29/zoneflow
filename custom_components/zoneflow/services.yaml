@@ -1,0 +1,7 @@
+run_now:
+  name: Udă acum
+  description: Pornește imediat un ciclu de udare secvențial cu timpii calculați curent.
+
+stop:
+  name: Oprește udarea
+  description: Oprește ciclul în curs și închide toate supapele.

@@ -1,0 +1,53 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "ZoneFlow",
+        "description": "Setări generale. Media temperaturii săptămânale se ia din entitatea weather aleasă.",
+        "data": {
+          "weather_entity": "Entitate weather (prognoză)",
+          "test_minutes": "Durata testului cu caserole (minute)",
+          "forecast_days": "Câte zile de prognoză mediez"
+        }
+      },
+      "zone_a": {
+        "title": "Zona A (fără suprapunere)",
+        "description": "Alege switch-urile celor două circuite ale zonei A.",
+        "data": {
+          "zone_a_circuit1": "Circuit 1",
+          "zone_a_circuit2": "Circuit 2"
+        }
+      },
+      "zone_b": {
+        "title": "Zona B (cu suprapunere)",
+        "description": "Circuitul „mijloc” udă ambele jumătăți (mai slab pe margine), iar „margine” completează jumătatea de la margine.",
+        "data": {
+          "zone_b_mid": "Circuit mijloc",
+          "zone_b_edge": "Circuit margine"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Setări irigație",
+        "data": {
+          "weather_entity": "Entitate weather (prognoză)",
+          "test_minutes": "Durata testului cu caserole (minute)",
+          "forecast_days": "Câte zile de prognoză mediez"
+        }
+      }
+    }
+  },
+  "services": {
+    "run_now": {
+      "name": "Udă acum",
+      "description": "Pornește imediat un ciclu de udare secvențial cu timpii calculați curent."
+    },
+    "stop": {
+      "name": "Oprește udarea",
+      "description": "Oprește ciclul în curs și închide toate supapele."
+    }
+  }
+}

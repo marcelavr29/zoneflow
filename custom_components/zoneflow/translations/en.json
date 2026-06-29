@@ -1,0 +1,53 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "ZoneFlow",
+        "description": "General settings. The weekly average temperature is read from the chosen weather entity.",
+        "data": {
+          "weather_entity": "Weather entity (forecast)",
+          "test_minutes": "Catch-cup test duration (minutes)",
+          "forecast_days": "Forecast days to average"
+        }
+      },
+      "zone_a": {
+        "title": "Zone A (no overlap)",
+        "description": "Pick the switches for the two circuits of zone A.",
+        "data": {
+          "zone_a_circuit1": "Circuit 1",
+          "zone_a_circuit2": "Circuit 2"
+        }
+      },
+      "zone_b": {
+        "title": "Zone B (overlapping)",
+        "description": "The \"middle\" circuit waters both halves (weaker at the margin); the \"edge\" circuit tops up the margin half.",
+        "data": {
+          "zone_b_mid": "Middle circuit",
+          "zone_b_edge": "Edge circuit"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "ZoneFlow settings",
+        "data": {
+          "weather_entity": "Weather entity (forecast)",
+          "test_minutes": "Catch-cup test duration (minutes)",
+          "forecast_days": "Forecast days to average"
+        }
+      }
+    }
+  },
+  "services": {
+    "run_now": {
+      "name": "Water now",
+      "description": "Immediately start a sequential watering cycle with the currently computed durations."
+    },
+    "stop": {
+      "name": "Stop watering",
+      "description": "Stop the running cycle and close all valves."
+    }
+  }
+}
