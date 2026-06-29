@@ -14,11 +14,15 @@ from .const import (
     CONF_WEATHER_ENTITY,
     CONF_ZONES,
     DOMAIN,
+    VAL_AUTO_INTERVAL,
     VAL_ENABLED,
     VAL_FACTOR,
     VAL_INTERVAL,
+    VAL_MAX_CYCLE,
     VAL_RAIN_COMP,
+    VAL_SOAK,
     VAL_START_TIME,
+    VAL_TARGET_MM,
 )
 
 
@@ -65,8 +69,12 @@ def _controls(hass: HomeAssistant, entry: ConfigEntry) -> dict:
     return {
         "enabled": eid("switch", VAL_ENABLED),
         "rain_comp": eid("switch", VAL_RAIN_COMP),
+        "auto_interval": eid("switch", VAL_AUTO_INTERVAL),
+        "target": eid("number", VAL_TARGET_MM),
         "factor": eid("number", VAL_FACTOR),
         "interval": eid("number", VAL_INTERVAL),
+        "max_cycle": eid("number", VAL_MAX_CYCLE),
+        "soak": eid("number", VAL_SOAK),
         "start_time": eid("time", VAL_START_TIME),
     }
 

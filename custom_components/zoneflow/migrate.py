@@ -10,10 +10,12 @@ from homeassistant.core import HomeAssistant
 
 from .const import (
     CONF_AREA,
+    CONF_FACTOR_PCT,
     CONF_FORECAST_DAYS,
     CONF_GROUPS,
     CONF_ID,
     CONF_NAME,
+    CONF_RATE,
     CONF_RATES,
     CONF_SECTIONS,
     CONF_SWITCHES,
@@ -22,6 +24,7 @@ from .const import (
     CONF_ZONES,
     DEFAULT_AREA,
     DEFAULT_DEPTH,
+    DEFAULT_FACTOR_PCT,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -111,25 +114,68 @@ def _zones_from_v1(data: dict) -> list[dict]:
     return zones
 
 
+def _to_float(value: object, default: float) -> float:
+    try:
+        return float(value) if value is not None else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _zone_to_v4(zone: dict) -> dict:
+    """Zonă cu porțiuni (v3) → zonă v4: arie = Σ secțiuni, factor 100, grup cu o singură rată."""
+    sections = zone.get(CONF_SECTIONS)
+    if sections is not None:
+        area = sum(_to_float(s.get(CONF_AREA), 0.0) for s in sections)
+    else:
+        area = _to_float(zone.get(CONF_AREA), DEFAULT_AREA)
+
+    groups = []
+    for g in zone.get(CONF_GROUPS, []):
+        if CONF_RATE in g:
+            rate = _to_float(g.get(CONF_RATE), DEFAULT_DEPTH)
+        else:
+            rates = (g.get(CONF_RATES) or {}).values()
+            rate = max((_to_float(v, 0.0) for v in rates), default=DEFAULT_DEPTH)
+        groups.append(
+            {
+                CONF_ID: g.get(CONF_ID, _cid()),
+                CONF_NAME: g.get(CONF_NAME, "Grup"),
+                CONF_SWITCHES: g.get(CONF_SWITCHES, []),
+                CONF_RATE: rate,
+            }
+        )
+    return {
+        CONF_ID: zone.get(CONF_ID, _cid()),
+        CONF_NAME: zone.get(CONF_NAME, "Zonă"),
+        CONF_AREA: area,
+        CONF_FACTOR_PCT: _to_float(zone.get(CONF_FACTOR_PCT), DEFAULT_FACTOR_PCT),
+        CONF_GROUPS: groups,
+    }
+
+
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Migrează la schema v3 din v1 (data fixă) sau v2 (zone cu circuite/roluri)."""
-    if entry.version >= 3:
+    """Migrează la schema curentă v4 (zonă: arie + factor%; grup: o rată)."""
+    if entry.version >= 4:
         return True
 
     data = dict(entry.data)
     if entry.version == 1:
-        zones = _zones_from_v1(data)
-    else:  # version == 2
-        zones = [_migrate_v2_zone(z) for z in entry.options.get(CONF_ZONES, [])]
+        zones_v3 = _zones_from_v1(data)
+    elif entry.version == 2:
+        zones_v3 = [_migrate_v2_zone(z) for z in entry.options.get(CONF_ZONES, [])]
+    else:  # version == 3
+        zones_v3 = entry.options.get(CONF_ZONES, [])
+
+    zones_v4 = [_zone_to_v4(z) for z in zones_v3]
 
     new_data = {
         key: data[key]
         for key in (CONF_WEATHER_ENTITY, CONF_TEST_MINUTES, CONF_FORECAST_DAYS)
         if key in data
     }
-    new_options = {**dict(entry.options), CONF_ZONES: zones}
+    new_options = {**dict(entry.options), CONF_ZONES: zones_v4}
     hass.config_entries.async_update_entry(
-        entry, data=new_data, options=new_options, version=3
+        entry, data=new_data, options=new_options, version=4
     )
-    _LOGGER.info("ZoneFlow: migrat la v3 cu %d zone", len(zones))
+    _LOGGER.info("ZoneFlow: migrat la v4 cu %d zone", len(zones_v4))
     return True

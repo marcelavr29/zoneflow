@@ -12,6 +12,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from calc import (  # noqa: E402
     coverage,
     effective_target,
+    interval_from_temp,
+    split_cycles,
     overlap_delivered,
     precip_rate,
     runtime_edge,
@@ -135,6 +137,29 @@ def test_solve_no_groups_or_zero_target():
     assert solve_runtimes([], 20) == []
     assert solve_runtimes([[0.8, 0.5]], 0) == [0.0, 0.0]
     assert solve_runtimes([[0.8, 0.5]], None) == [0.0, 0.0]
+
+
+def test_split_cycles():
+    assert split_cycles(30, 12) == pytest.approx([10, 10, 10])
+    assert split_cycles(10, 15) == [10]          # sub prag -> o repriză
+    assert split_cycles(20, 0) == [20]           # dezactivat
+    assert split_cycles(0, 15) == []
+    parts = split_cycles(25, 10)
+    assert len(parts) == 3 and sum(parts) == pytest.approx(25)
+
+
+def test_interval_from_temp():
+    assert interval_from_temp(29) == 3     # vârf de vară -> 2x/săpt
+    assert interval_from_temp(25) == 3
+    assert interval_from_temp(18) == 7     # moderat -> 1x/săpt
+    assert interval_from_temp(10) == 7
+    assert interval_from_temp(5) == 14     # rece
+    assert interval_from_temp(None) == 7
+
+
+def test_fixed_target_runtime():
+    # țintă fixă 15, rată 9 mm/10min => 15 / 0.9 = 16.67 min
+    assert runtime_simple(15, 9, 10) == pytest.approx(16.6667, abs=1e-3)
 
 
 def test_weighted_precipitation():

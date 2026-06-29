@@ -55,7 +55,7 @@ def _general_schema(defaults: dict[str, Any]) -> vol.Schema:
 class ZoneFlowConfigFlow(ConfigFlow, domain=DOMAIN):
     """Setup inițial: doar setări generale. Zonele se adaugă din panoul ZoneFlow."""
 
-    VERSION = 3
+    VERSION = 4
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None

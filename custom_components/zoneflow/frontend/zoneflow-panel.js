@@ -136,7 +136,7 @@ class ZoneFlowPanel extends HTMLElement {
         <div class="card"><span>Ploaie prevăzută (24h)</span><b>${fmt(l.rain_forecast_mm, " mm")}</b></div>
         <div class="card"><span>Țintă după ploaie</span><b>${fmt(l.effective_target_mm, " L/m²")}</b></div>
         <div class="card"><span>Apă pe sesiune</span><b>${fmt(l.liters, " L", 0)}</b></div>
-        <div class="card"><span>Interval</span><b>${l.interval_days != null ? l.interval_days + " zile" : "—"}</b></div>
+        <div class="card"><span>Interval</span><b>${l.interval_days != null ? l.interval_days + " zile" : "—"}${l.auto_interval ? " (auto)" : ""}</b></div>
         <div class="card"><span>Ultima udare</span><b>${esc(lr)}</b></div>
         <div class="card"><span>Următoarea udare</span><b>${esc(nr)}</b></div>
       </div>
@@ -156,9 +156,10 @@ class ZoneFlowPanel extends HTMLElement {
       .map((z, zi) => this._renderZoneCard(z, zi))
       .join("") || `<div class="muted">Nicio zonă. Adaugă una mai jos.</div>`;
     return `
-      <p class="muted">O <b>porțiune</b> = sub-zonă care trebuie udată la fel. Un <b>grup</b> =
-      supapele care pornesc deodată (și pe care le-ai măsurat împreună). Pune rata în mm pe
-      fiecare porțiune; 0 dacă grupul nu ajunge acolo.</p>
+      <p class="muted">O <b>zonă</b> = o parte din grădină (suprafață + un factor % opțional, ex.
+      umbră 70%). Un <b>grup</b> = supapele care pornesc deodată, cu <b>rata</b> măsurată la testul
+      cu caserole (mm în testul de ${esc((this._data.general || {}).test_minutes || 10)} min).
+      Durata = țintă / rată.</p>
       ${zones}
       <div class="actions">
         <button class="btn" data-act="add-zone">➕ Adaugă zonă</button>
@@ -167,30 +168,20 @@ class ZoneFlowPanel extends HTMLElement {
   }
 
   _renderZoneCard(z, zi) {
-    const sections = (z.sections || [])
-      .map(
-        (s, si) => `
-        <div class="row">
-          <input data-z="${zi}" data-s="${si}" data-f="sname" value="${esc(s.name)}" placeholder="Nume porțiune"/>
-          <input data-z="${zi}" data-s="${si}" data-f="sarea" type="number" min="0" step="0.5" value="${esc(s.area)}" placeholder="m²" class="num"/>
-          <span class="unit">m²</span>
-          <button class="x" data-act="del-section" data-z="${zi}" data-s="${si}">✕</button>
-        </div>`
-      )
-      .join("");
-
     const groups = (z.groups || []).map((g, gi) => this._renderGroup(z, zi, g, gi)).join("");
-
     return `
       <div class="zone">
         <div class="zone-head">
           <input class="zname" data-z="${zi}" data-f="zname" value="${esc(z.name)}" placeholder="Nume zonă"/>
           <button class="x" data-act="del-zone" data-z="${zi}">🗑️ Șterge zona</button>
         </div>
-        <div class="sub">Porțiuni</div>
-        ${sections}
-        <button class="btn small" data-act="add-section" data-z="${zi}">➕ Porțiune</button>
-        <div class="sub">Grupuri</div>
+        <div class="row2">
+          <label class="lbl">Suprafață (m²)
+            <input data-z="${zi}" data-f="zarea" type="number" min="0" step="0.5" value="${esc(z.area != null ? z.area : 0)}" class="num"/></label>
+          <label class="lbl">Factor zonă (%)
+            <input data-z="${zi}" data-f="zfactor" type="number" min="0" max="200" step="5" value="${esc(z.factor_pct != null ? z.factor_pct : 100)}" class="num"/></label>
+        </div>
+        <div class="sub">Grupuri (supape + rată)</div>
         ${groups}
         <button class="btn small" data-act="add-group" data-z="${zi}">➕ Grup</button>
       </div>`;
@@ -205,15 +196,6 @@ class ZoneFlowPanel extends HTMLElement {
           }>${esc(sw.name)}</option>`
       )
       .join("");
-    const rates = (z.sections || [])
-      .map(
-        (s) => `
-        <label class="rate">${esc(s.name)}
-          <input data-z="${zi}" data-g="${gi}" data-sec="${esc(s.id)}" data-f="rate" type="number" min="0" step="0.1"
-                 value="${esc(g.rates && g.rates[s.id] != null ? g.rates[s.id] : "")}" class="num"/> mm
-        </label>`
-      )
-      .join("");
     return `
       <div class="group">
         <div class="row">
@@ -222,7 +204,8 @@ class ZoneFlowPanel extends HTMLElement {
         </div>
         <label class="lbl">Supape (pornesc simultan)</label>
         <select multiple size="3" data-z="${zi}" data-g="${gi}" data-f="switches">${opts}</select>
-        <div class="rates">${rates}</div>
+        <label class="lbl">Rată caserolă (mm / test)
+          <input data-z="${zi}" data-g="${gi}" data-f="grate" type="number" min="0" step="0.1" value="${esc(g.rate != null ? g.rate : "")}" class="num"/></label>
       </div>`;
   }
 
@@ -233,11 +216,11 @@ class ZoneFlowPanel extends HTMLElement {
       .join("");
     const c = this._data.controls || {};
     const st = (eid) => (eid && this._hass.states[eid]) || null;
+    const val = (eid, dflt) => { const s = st(eid); return s ? s.state : dflt; };
     const timeState = st(c.start_time);
-    const factorState = st(c.factor);
     const enabledOn = st(c.enabled) && st(c.enabled).state === "on";
     const rainOn = st(c.rain_comp) && st(c.rain_comp).state === "on";
-    const intervalState = st(c.interval);
+    const autoOn = st(c.auto_interval) ? st(c.auto_interval).state === "on" : true;
     return `
       <h3>General</h3>
       <label class="lbl">Entitate weather (prognoză)</label>
@@ -248,49 +231,56 @@ class ZoneFlowPanel extends HTMLElement {
         <label class="lbl">Zile prognoză
           <input id="fdays" type="number" min="1" max="14" step="1" value="${esc(g.forecast_days)}" class="num"/></label>
       </div>
-      <button class="btn primary" data-act="save-general">💾 Salvează setările generale</button>
 
-      <h3>Program & reglaje</h3>
-      <label class="chk"><input type="checkbox" data-ctrl="toggle" data-eid="${esc(c.enabled)}" ${enabledOn ? "checked" : ""}/> Irigație activă</label>
-      <label class="chk"><input type="checkbox" data-ctrl="toggle" data-eid="${esc(c.rain_comp)}" ${rainOn ? "checked" : ""}/> Compensare ploaie</label>
+      <h3>Cantitate & program</h3>
       <div class="row2">
+        <label class="lbl">Țintă apă (L/m²)
+          <input id="target" type="number" min="5" max="40" step="1" value="${esc(val(c.target, "15"))}" class="num"/></label>
+        <label class="lbl">Ajustare globală (×)
+          <input id="factor" type="number" min="0" max="3" step="0.05" value="${esc(val(c.factor, "1.0"))}" class="num"/></label>
         <label class="lbl">Ora de udare
           <input id="starttime" type="time" value="${esc(timeState ? timeState.state.slice(0,5) : "06:00")}"/></label>
-        <label class="lbl">Interval între udări (zile)
-          <input id="interval" type="number" min="1" max="60" step="1" value="${esc(intervalState ? intervalState.state : "2")}" class="num"/></label>
-        <label class="lbl">Factor corecție
-          <input id="factor" type="number" min="0" max="3" step="0.05" value="${esc(factorState ? factorState.state : "1.0")}" class="num"/></label>
       </div>
-      <p class="muted">Udarea pornește la „Ora de udare", apoi din nou după intervalul setat,
-      numărat de la ultima udare reală.</p>`;
+      <label class="chk"><input type="checkbox" data-ctrl="toggle" data-eid="${esc(c.enabled)}" ${enabledOn ? "checked" : ""}/> Irigație activă</label>
+      <label class="chk"><input type="checkbox" data-ctrl="toggle" data-eid="${esc(c.rain_comp)}" ${rainOn ? "checked" : ""}/> Compensare ploaie</label>
+      <label class="chk"><input type="checkbox" data-ctrl="toggle" data-eid="${esc(c.auto_interval)}" ${autoOn ? "checked" : ""}/> Interval automat (după temperatură)</label>
+      <label class="lbl">Interval manual (zile, când „automat" e oprit)
+        <input id="interval" type="number" min="1" max="60" step="1" value="${esc(val(c.interval, "3"))}" class="num"/></label>
+
+      <h3>Cycle &amp; soak (anti-băltire)</h3>
+      <div class="row2">
+        <label class="lbl">Minute max/ciclu (0 = oprit)
+          <input id="maxcycle" type="number" min="0" max="120" step="1" value="${esc(val(c.max_cycle, "15"))}" class="num"/></label>
+        <label class="lbl">Pauză infiltrare (min)
+          <input id="soak" type="number" min="0" max="120" step="1" value="${esc(val(c.soak, "20"))}" class="num"/></label>
+      </div>
+      <button class="btn primary" data-act="save-general">💾 Salvează setările</button>
+      <p class="muted">Cantitate fixă „rar și mult" (~15 L/m²). Cu „Interval automat", frecvența
+      vine din temperatură: ≥25°C → la 3 zile (2×/săpt), 10-25°C → la 7 zile, &lt;10°C → la 14 zile.</p>`;
   }
 
   _renderAjutor() {
     return `
+      <h3>Principiu: „rar și mult"</h3>
+      <p>Udăm <b>rar și abundent</b> (~15 L/m²/udare) ca să umezim solul adânc (15-20 cm) →
+      rădăcini profunde. Cantitatea e <b>fixă</b>; <b>temperatura decide frecvența</b>, nu cantitatea.</p>
       <h3>Cum gândești configurarea</h3>
       <ul class="help">
-        <li><b>Zonă</b> = o parte din grădină (ex. „Față", „Spate").</li>
-        <li><b>Porțiune</b> = o sub-zonă care trebuie udată la aceeași cantitate. Majoritatea
-            zonelor au o singură porțiune („Toată zona"). Adaugi mai multe doar dacă o parte e
-            udată diferit (ex. „interior" și „margine").</li>
-        <li><b>Grup</b> = supapele care <b>pornesc deodată</b> și pe care le-ai măsurat
-            <b>împreună</b> la testul cu caserole. Un circuit care pornește singur = un grup cu
-            o supapă.</li>
-        <li><b>Rata (mm)</b> = câți mm a adunat caserola pe acea porțiune, cu supapele grupului
-            pornite, în testul de X minute (durata din Setări). Mai multe caserole → pune media.
-            0 dacă grupul nu ajunge la porțiune.</li>
+        <li><b>Zonă</b> = o parte din grădină, cu <b>suprafața</b> (m²) și un <b>factor %</b>
+            (ex. front umbrit 70% → mai puțină apă).</li>
+        <li><b>Grup</b> = supapele care <b>pornesc deodată</b> și le-ai măsurat <b>împreună</b>.
+            Un circuit care pornește singur = un grup cu o supapă.</li>
+        <li><b>Rata (mm)</b> = câți mm a adunat caserola cu supapele grupului pornite, în testul
+            de X minute (din Setări). Mai multe caserole → pune media.</li>
       </ul>
       <h3>Cum se calculează</h3>
-      <p>Ținta = media temperaturii săptămânale (ex. 25°C → 25 L/m²), minus ploaia prevăzută.
-      ZoneFlow rezolvă cât rulează fiecare grup ca fiecare porțiune să primească ținta.
-      Grupurile rulează pe rând; supapele dintr-un grup pornesc simultan.</p>
-      <h3>Exemple</h3>
-      <ul class="help">
-        <li><b>Față</b> (2 supape care stropesc tot, pornite deodată): o porțiune + un grup cu
-            ambele supape + o rată.</li>
-        <li><b>Spate</b> (mijloc + margine): două porțiuni („Interior", „Margine"); grup „Mijloc"
-            cu rată în ambele, grup „Margine" cu rată doar în „Margine".</li>
-      </ul>
+      <p>Țintă zonă = <b>Țintă (L/m²)</b> × ajustare globală × factor zonă − ploaie prevăzută.
+      Durata fiecărui grup = țintă / rata lui (metoda testului cu caserole). Grupurile rulează pe
+      rând; supapele dintr-un grup, simultan. Dacă durata e mare, <b>cycle &amp; soak</b> o împarte
+      în reprize cu pauze, ca să nu băltească.</p>
+      <h3>Frecvența (interval automat)</h3>
+      <p>Din temperatura medie: <b>≥25°C → la 3 zile</b> (2×/săpt), <b>10-25°C → la 7 zile</b>
+      (1×/săpt), <b>&lt;10°C → la 14 zile</b>. Poți trece pe interval manual din Setări.</p>
       <h3>Furnizor de prognoză</h3>
       <p>ZoneFlow folosește o entitate <code>weather</code> aleasă în Setări (nu un furnizor
       propriu). Dacă „Media temperaturii" e goală, entitatea aleasă nu oferă prognoză cu
@@ -323,17 +313,12 @@ class ZoneFlowPanel extends HTMLElement {
     const z = this._zones[+d.z];
     if (!z) return;
     if (d.f === "zname") z.name = el.value;
-    else if (d.f === "sname") z.sections[+d.s].name = el.value;
-    else if (d.f === "sarea") z.sections[+d.s].area = parseFloat(el.value) || 0;
+    else if (d.f === "zarea") z.area = parseFloat(el.value) || 0;
+    else if (d.f === "zfactor") z.factor_pct = parseFloat(el.value) || 0;
     else if (d.f === "gname") z.groups[+d.g].name = el.value;
     else if (d.f === "switches")
       z.groups[+d.g].switches = Array.from(el.selectedOptions).map((o) => o.value);
-    else if (d.f === "rate") {
-      const g = z.groups[+d.g];
-      g.rates = g.rates || {};
-      if (el.value === "") delete g.rates[d.sec];
-      else g.rates[d.sec] = parseFloat(el.value) || 0;
-    }
+    else if (d.f === "grate") z.groups[+d.g].rate = parseFloat(el.value) || 0;
   }
 
   async _onControl(el) {
@@ -354,23 +339,12 @@ class ZoneFlowPanel extends HTMLElement {
       }
 
       if (act === "add-zone") {
-        this._zones.push({ id: genId(), name: "Zonă nouă", sections: [{ id: genId(), name: "Toată zona", area: 0 }], groups: [] });
+        this._zones.push({ id: genId(), name: "Zonă nouă", area: 0, factor_pct: 100, groups: [] });
         return this._render();
       }
       if (act === "del-zone") { this._zones.splice(+d.z, 1); return this._render(); }
-      if (act === "add-section") {
-        this._zones[+d.z].sections.push({ id: genId(), name: "Porțiune", area: 0 });
-        return this._render();
-      }
-      if (act === "del-section") {
-        const z = this._zones[+d.z];
-        const sid = z.sections[+d.s].id;
-        z.sections.splice(+d.s, 1);
-        (z.groups || []).forEach((g) => { if (g.rates) delete g.rates[sid]; });
-        return this._render();
-      }
       if (act === "add-group") {
-        this._zones[+d.z].groups.push({ id: genId(), name: "Grup", switches: [], rates: {} });
+        this._zones[+d.z].groups.push({ id: genId(), name: "Grup", switches: [], rate: 10 });
         return this._render();
       }
       if (act === "del-group") { this._zones[+d.z].groups.splice(+d.g, 1); return this._render(); }
@@ -391,8 +365,14 @@ class ZoneFlowPanel extends HTMLElement {
         if (c.start_time && t) await this._hass.callService("time", "set_value", { entity_id: c.start_time, time: t.length === 5 ? t + ":00" : t });
         const f = this.shadowRoot.getElementById("factor").value;
         if (c.factor && f !== "") await this._hass.callService("number", "set_value", { entity_id: c.factor, value: parseFloat(f) });
-        const iv = this.shadowRoot.getElementById("interval").value;
-        if (c.interval && iv !== "") await this._hass.callService("number", "set_value", { entity_id: c.interval, value: parseInt(iv) });
+        const setNum = async (eid, id) => {
+          const v = this.shadowRoot.getElementById(id);
+          if (eid && v && v.value !== "") await this._hass.callService("number", "set_value", { entity_id: eid, value: parseFloat(v.value) });
+        };
+        await setNum(c.target, "target");
+        await setNum(c.interval, "interval");
+        await setNum(c.max_cycle, "maxcycle");
+        await setNum(c.soak, "soak");
         this._toast("Setările au fost salvate.");
         return this._reload(true);
       }

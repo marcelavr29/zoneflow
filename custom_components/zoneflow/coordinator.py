@@ -16,27 +16,35 @@ from homeassistant.util import dt as dt_util
 from . import calc
 from .const import (
     CONF_AREA,
+    CONF_FACTOR_PCT,
     CONF_FORECAST_DAYS,
     CONF_GROUPS,
     CONF_ID,
     CONF_NAME,
-    CONF_RATES,
-    CONF_SECTIONS,
+    CONF_RATE,
     CONF_SWITCHES,
     CONF_TEST_MINUTES,
     CONF_WEATHER_ENTITY,
     CONF_ZONES,
     DEFAULT_AREA,
+    DEFAULT_FACTOR_PCT,
     DEFAULT_FORECAST_DAYS,
-    DEFAULT_TEST_MINUTES,
     DEFAULT_INTERVAL_DAYS,
+    DEFAULT_MAX_CYCLE_MIN,
+    DEFAULT_SOAK_MIN,
+    DEFAULT_TARGET_MM,
+    DEFAULT_TEST_MINUTES,
     DOMAIN,
     RAIN_WINDOW_HOURS,
+    VAL_AUTO_INTERVAL,
     VAL_ENABLED,
     VAL_FACTOR,
     VAL_INTERVAL,
+    VAL_MAX_CYCLE,
     VAL_RAIN_COMP,
+    VAL_SOAK,
     VAL_START_TIME,
+    VAL_TARGET_MM,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -140,7 +148,7 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
     def set_value(self, key: str, value: object) -> None:
         """Apelat de entitățile de reglaj când valoarea se schimbă."""
         self.values[key] = value
-        if key in (VAL_START_TIME, VAL_ENABLED, VAL_INTERVAL):
+        if key in (VAL_START_TIME, VAL_ENABLED):
             self._reschedule()
         self.recompute()
 
@@ -215,59 +223,44 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
         return self._build_data()
 
     # --------------------------------------------------------------- calcule
+    def _zone_target(self, zone: dict) -> float:
+        """Ținta efectivă a unei zone (L/m²) = global × factor_zonă − ploaie, ≥ 0."""
+        gross = self._gross_target()
+        if gross is None:
+            return 0.0
+        factor_pct = _num(zone.get(CONF_FACTOR_PCT), DEFAULT_FACTOR_PCT) / 100.0
+        return max(0.0, gross * factor_pct - self._rain())
+
     def compute_runtimes(self) -> dict[str, float]:
-        """Timpii de rulare [minute] per grup (cheie = id grup), din ținta efectivă.
-
-        Per zonă rezolvă sistemul porțiuni × grupuri (`calc.solve_runtimes`), astfel încât
-        fiecare porțiune să primească ținta.
-        """
-        target = self._effective_target()
+        """Timpii de rulare [minute] per grup = țintă_zonă / rata grupului (metoda caserolei)."""
         runtimes: dict[str, float] = {}
-
         for zone in self.zones:
-            sections = zone.get(CONF_SECTIONS, [])
-            groups = zone.get(CONF_GROUPS, [])
-            for group in groups:
-                runtimes[group.get(CONF_ID)] = 0.0
-            if not sections or not groups or target is None:
-                continue
-            # A[porțiune][grup] = rata de precipitație (mm/min) a grupului pe acea porțiune.
-            matrix = [
-                [
-                    calc.precip_rate(
-                        _num(group.get(CONF_RATES, {}).get(section.get(CONF_ID)), 0.0),
-                        self.test_minutes,
-                    )
-                    for group in groups
-                ]
-                for section in sections
-            ]
-            solved = calc.solve_runtimes(matrix, target)
-            for group, minutes in zip(groups, solved):
-                runtimes[group.get(CONF_ID)] = minutes
+            zone_target = self._zone_target(zone)
+            for group in zone.get(CONF_GROUPS, []):
+                rate = _num(group.get(CONF_RATE), 0.0)
+                runtimes[group.get(CONF_ID)] = calc.runtime_simple(
+                    zone_target, rate, self.test_minutes
+                )
         return runtimes
 
     def _gross_target(self) -> float | None:
-        """Ținta din temperatură, înainte de scăderea ploii."""
-        return calc.target_mm(self.avg_temp, self.get_float(VAL_FACTOR, 1.0))
+        """Cantitatea fixă pe sesiune (L/m²), scalată de factorul global. Nu depinde de temp."""
+        return self.get_float(VAL_TARGET_MM, DEFAULT_TARGET_MM) * self.get_float(VAL_FACTOR, 1.0)
 
     def _rain(self) -> float:
         """Ploaia luată în calcul (0 dacă compensarea e dezactivată)."""
         return self.rain_mm if self.get_bool(VAL_RAIN_COMP, True) else 0.0
 
     def _effective_target(self) -> float | None:
+        """Ținta globală după ploaie (pentru afișare; per zonă se aplică și factorul zonei)."""
         return calc.effective_target(self._gross_target(), self._rain())
 
-    def _session_liters(self, target: float | None, runtimes: dict[str, float]) -> float:
-        """Litri pe sesiune ≈ ținta × suma suprafețelor tuturor porțiunilor."""
-        if target is None:
-            return 0.0
-        total_area = sum(
-            _num(section.get(CONF_AREA), DEFAULT_AREA)
+    def _session_liters(self) -> float:
+        """Litri pe sesiune ≈ Σ pe zone (țintă_zonă × suprafața zonei)."""
+        return sum(
+            self._zone_target(zone) * _num(zone.get(CONF_AREA), DEFAULT_AREA)
             for zone in self.zones
-            for section in zone.get(CONF_SECTIONS, [])
         )
-        return target * total_area
 
     def _build_data(self) -> dict:
         gross = self._gross_target()
@@ -285,10 +278,11 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
             "rain_forecast_mm": self.rain_mm,
             "will_skip": will_skip,
             "runtimes": runtimes,
-            "liters": self._session_liters(effective, runtimes),
+            "liters": self._session_liters(),
             "next_run": self._next_run(),
             "last_run": self.last_run.isoformat() if self.last_run else None,
             "interval_days": self._interval(),
+            "auto_interval": self.get_bool(VAL_AUTO_INTERVAL, True),
         }
 
     @callback
@@ -316,6 +310,9 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
         )
 
     def _interval(self) -> int:
+        """Intervalul efectiv: AUTO din temperatură, sau manual dacă Auto e oprit."""
+        if self.get_bool(VAL_AUTO_INTERVAL, True):
+            return calc.interval_from_temp(self.avg_temp)
         return max(1, int(self.get_float(VAL_INTERVAL, DEFAULT_INTERVAL_DAYS)))
 
     @callback
@@ -390,7 +387,18 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
             self.recompute()
 
     async def _run_group(self, switches: list[str], minutes: float) -> None:
-        """Pornește toate supapele grupului SIMULTAN, așteaptă, apoi le oprește."""
+        """Rulează grupul (toate supapele simultan), eventual în reprize (cycle & soak)."""
+        max_cycle = self.get_float(VAL_MAX_CYCLE, DEFAULT_MAX_CYCLE_MIN)
+        soak = self.get_float(VAL_SOAK, DEFAULT_SOAK_MIN)
+        cycles = calc.split_cycles(minutes, max_cycle)
+        for idx, cycle_min in enumerate(cycles):
+            await self._run_once(switches, cycle_min)
+            if idx < len(cycles) - 1 and soak > 0:
+                _LOGGER.info("Pauză de infiltrare %.0f min", soak)
+                await asyncio.sleep(soak * 60)
+
+    async def _run_once(self, switches: list[str], minutes: float) -> None:
+        """O singură repriză: pornește supapele simultan, așteaptă, le oprește."""
         _LOGGER.info("Pornesc grupul %s pentru %.1f min", switches, minutes)
         await self.hass.services.async_call(
             "switch", "turn_on", {"entity_id": switches}, blocking=True

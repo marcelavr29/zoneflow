@@ -1,7 +1,7 @@
 {
   "domain": "zoneflow",
   "name": "ZoneFlow",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "documentation": "https://github.com/marcelavr29/zoneflow",
   "issue_tracker": "https://github.com/marcelavr29/zoneflow/issues",
   "codeowners": ["@marcelavr29"],

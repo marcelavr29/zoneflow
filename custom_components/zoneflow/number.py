@@ -10,7 +10,17 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import ZoneFlowConfigEntry
-from .const import DEFAULT_INTERVAL_DAYS, VAL_FACTOR, VAL_INTERVAL
+from .const import (
+    DEFAULT_INTERVAL_DAYS,
+    DEFAULT_MAX_CYCLE_MIN,
+    DEFAULT_SOAK_MIN,
+    DEFAULT_TARGET_MM,
+    VAL_FACTOR,
+    VAL_INTERVAL,
+    VAL_MAX_CYCLE,
+    VAL_SOAK,
+    VAL_TARGET_MM,
+)
 from .coordinator import ZoneFlowCoordinator
 from .entity import ZoneFlowEntity
 
@@ -29,8 +39,18 @@ class ZoneFlowNumberDef:
 
 _NUMBERS = [
     ZoneFlowNumberDef(
+        value_key=VAL_TARGET_MM,
+        name="Țintă apă (L/m²)",
+        minimum=5,
+        maximum=40,
+        step=1,
+        default=DEFAULT_TARGET_MM,
+        icon="mdi:water",
+        unit="L/m²",
+    ),
+    ZoneFlowNumberDef(
         value_key=VAL_FACTOR,
-        name="Factor corecție",
+        name="Ajustare globală",
         minimum=0,
         maximum=3,
         step=0.05,
@@ -39,13 +59,33 @@ _NUMBERS = [
     ),
     ZoneFlowNumberDef(
         value_key=VAL_INTERVAL,
-        name="Interval între udări",
+        name="Interval manual",
         minimum=1,
         maximum=60,
         step=1,
         default=DEFAULT_INTERVAL_DAYS,
         icon="mdi:calendar-sync",
         unit="zile",
+    ),
+    ZoneFlowNumberDef(
+        value_key=VAL_MAX_CYCLE,
+        name="Minute max/ciclu (cycle & soak)",
+        minimum=0,
+        maximum=120,
+        step=1,
+        default=DEFAULT_MAX_CYCLE_MIN,
+        icon="mdi:timer-cog",
+        unit="min",
+    ),
+    ZoneFlowNumberDef(
+        value_key=VAL_SOAK,
+        name="Pauză infiltrare (soak)",
+        minimum=0,
+        maximum=120,
+        step=1,
+        default=DEFAULT_SOAK_MIN,
+        icon="mdi:timer-sand-paused",
+        unit="min",
     ),
 ]
 

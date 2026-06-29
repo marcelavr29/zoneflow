@@ -150,6 +150,40 @@ def coverage(rate_matrix: list[list[float]], runtimes: list[float]) -> list[floa
     return (np.array(rate_matrix, dtype=float) @ np.array(runtimes, dtype=float)).tolist()
 
 
+def split_cycles(runtime_min: float, max_cycle_min: float) -> list[float]:
+    """Împarte o durată în reprize egale ≤ max_cycle (cycle & soak).
+
+    Ex.: `split_cycles(30, 12)` → `[10, 10, 10]`. Dacă `max_cycle <= 0` sau durata e mai mică,
+    întoarce o singură repriză. Reprizele sunt egale ca să livreze exact `runtime_min` total.
+    """
+    if runtime_min <= 0:
+        return []
+    if max_cycle_min <= 0 or runtime_min <= max_cycle_min:
+        return [runtime_min]
+    import math
+
+    n = math.ceil(runtime_min / max_cycle_min)
+    return [runtime_min / n] * n
+
+
+def interval_from_temp(avg_temp: float | None) -> int:
+    """Frecvența (zile între udări) din temperatura medie a zilei — model „rar și mult".
+
+    Praguri (fidel ghidului semintegazon.ro):
+    - ≥ 25 °C  → 3 zile (≈ 2×/săptămână, vârf de vară);
+    - 10–25 °C → 7 zile (1×/săptămână);
+    - < 10 °C  → 14 zile (după necesități, sezon rece).
+    `None` → 7 (presupunere prudentă de sezon moderat).
+    """
+    if avg_temp is None:
+        return 7
+    if avg_temp >= 25:
+        return 3
+    if avg_temp >= 10:
+        return 7
+    return 14
+
+
 def weighted_precipitation(entries: Iterable[tuple]) -> float:
     """Suma precipitațiilor prevăzute (mm), ponderate cu probabilitatea.
 
