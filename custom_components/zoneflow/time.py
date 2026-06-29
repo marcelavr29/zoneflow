@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime as dt
 
 from homeassistant.components.time import TimeEntity
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
@@ -29,6 +30,7 @@ class ZoneFlowStartTime(ZoneFlowEntity, RestoreEntity, TimeEntity):
     """Ora de pornire a ciclului de udare."""
 
     _attr_icon = "mdi:clock-outline"
+    _attr_entity_category = EntityCategory.CONFIG
 
     def __init__(self, coordinator: ZoneFlowCoordinator) -> None:
         super().__init__(coordinator)

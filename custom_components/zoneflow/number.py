@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from homeassistant.components.number import NumberEntity, NumberMode, RestoreNumber
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -28,6 +29,7 @@ class ZoneFlowFactor(ZoneFlowEntity, RestoreNumber, NumberEntity):
     _attr_native_max_value = 3
     _attr_native_step = 0.05
     _attr_icon = "mdi:tune"
+    _attr_entity_category = EntityCategory.CONFIG
 
     def __init__(self, coordinator: ZoneFlowCoordinator) -> None:
         super().__init__(coordinator)

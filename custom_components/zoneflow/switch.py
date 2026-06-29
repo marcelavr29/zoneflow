@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
@@ -35,16 +36,19 @@ async def async_setup_entry(
             name="Compensare ploaie",
             default=True,
             icon="mdi:weather-rainy",
+            category=EntityCategory.CONFIG,
         ),
     ]
-    for key in WEEKDAYS:
+    for idx, key in enumerate(WEEKDAYS, start=1):
         entities.append(
             ZoneFlowToggle(
                 coordinator,
                 value_key=VAL_DAY[key],
-                name=f"Udare · {WEEKDAY_NAMES[key]}",
+                # Prefix numeric => ordine de săptămână (altfel dashboard-ul le sortează alfabetic).
+                name=f"Zi udare {idx} · {WEEKDAY_NAMES[key]}",
                 default=False,
                 icon="mdi:calendar-check",
+                category=EntityCategory.CONFIG,
             )
         )
     async_add_entities(entities)
@@ -61,6 +65,7 @@ class ZoneFlowToggle(ZoneFlowEntity, RestoreEntity, SwitchEntity):
         name: str,
         default: bool,
         icon: str | None = None,
+        category: EntityCategory | None = None,
     ) -> None:
         super().__init__(coordinator)
         self._value_key = value_key
@@ -68,6 +73,7 @@ class ZoneFlowToggle(ZoneFlowEntity, RestoreEntity, SwitchEntity):
         self._attr_unique_id = f"{coordinator.entry.entry_id}_{value_key}"
         self._attr_name = name
         self._attr_icon = icon
+        self._attr_entity_category = category
         self._attr_is_on = default
 
     async def async_added_to_hass(self) -> None:
