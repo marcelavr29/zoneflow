@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.start import async_at_started
 
 from .const import (
     CONF_GROUPS,
@@ -46,6 +47,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ZoneFlowConfigEntry) -> 
     async_register_ws(hass)
     await async_register_panel(hass)
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
+
+    # După ce HA a pornit complet (entitatea weather e gata), reîmprospătăm prognoza —
+    # altfel media temperaturii apare „—" până la următoarea actualizare orară.
+    @callback
+    def _refresh_when_started(_hass: HomeAssistant) -> None:
+        hass.async_create_task(coordinator.async_request_refresh())
+
+    entry.async_on_unload(async_at_started(hass, _refresh_when_started))
 
     return True
 

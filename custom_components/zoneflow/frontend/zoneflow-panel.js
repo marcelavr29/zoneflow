@@ -66,6 +66,15 @@ class ZoneFlowPanel extends HTMLElement {
       this._zones = JSON.parse(JSON.stringify(this._data.zones || []));
       this._dirty = false;
       this._error = null;
+      // Auto-vindecare: dacă temperatura e goală la deschidere (ex. imediat după restart),
+      // forțăm o reîmprospătare a prognozei o singură dată.
+      if (!this._retriedTemp && this._data.live && this._data.live.avg_temp == null) {
+        this._retriedTemp = true;
+        try {
+          await this._ws({ type: "zoneflow/refresh" });
+          this._data = await this._ws({ type: "zoneflow/get" });
+        } catch (e) { /* ignorăm */ }
+      }
     } catch (e) {
       this._error = (e && e.message) || "Eroare la încărcare";
     }
