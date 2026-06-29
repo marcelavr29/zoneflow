@@ -425,7 +425,7 @@ const STYLE = `
   table{width:100%;border-collapse:collapse;} td{padding:6px 4px;border-bottom:1px solid var(--divider-color,#2a2a2a);}
   td.r{text-align:right;font-variant-numeric:tabular-nums;}
   .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px;}
-  .savebar{position:sticky;bottom:0;display:flex;gap:8px;align-items:center;margin-top:12px;padding:10px 0;background:var(--card-background-color,#1c1c1c);border-top:1px solid var(--divider-color,#333);}
+  .savebar{position:sticky;bottom:0;display:flex;gap:8px;align-items:center;margin-top:12px;padding:10px 14px;background:var(--card-background-color,#1c1c1c);border-top:1px solid var(--divider-color,#333);}
   .dirty{flex:1;text-align:right;color:#ffb300;font-size:13px;}
   .btn{padding:9px 14px;border:1px solid var(--divider-color,#444);border-radius:8px;background:var(--card-background-color,#1c1c1c);color:inherit;cursor:pointer;}
   .btn.primary{background:var(--primary-color,#03a9f4);color:#fff;border-color:transparent;}
