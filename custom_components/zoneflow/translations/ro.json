@@ -2,12 +2,17 @@
   "config": {
     "step": {
       "user": {
-        "title": "ZoneFlow",
-        "description": "Setări generale. Media temperaturii săptămânale se ia din entitatea weather aleasă. Zonele le adaugi după instalare, din butonul „Configurează”.",
+        "title": "ZoneFlow — setări generale",
+        "description": "Setările comune. Zonele (ce uzi și cât) le configurezi după instalare, din panoul „ZoneFlow” apărut în bara laterală.",
         "data": {
           "weather_entity": "Entitate weather (prognoză)",
           "test_minutes": "Durata testului cu caserole (minute)",
-          "forecast_days": "Câte zile de prognoză mediez"
+          "forecast_days": "Zile de prognoză pentru medie"
+        },
+        "data_description": {
+          "weather_entity": "Sursa pentru media temperaturii și ploaia prevăzută.",
+          "test_minutes": "Cât a durat testul în care ai măsurat apa din caserole (de obicei 10).",
+          "forecast_days": "Pe câte zile se face media temperaturii (ex. 7)."
         }
       }
     }
@@ -15,59 +20,13 @@
   "options": {
     "step": {
       "init": {
-        "title": "ZoneFlow — configurare",
-        "description": "Zone configurate:\n{zones}",
-        "data": {"action": "Ce vrei să faci?"}
-      },
-      "general": {
-        "title": "Setări generale",
+        "title": "Setări generale ZoneFlow",
+        "description": "Zonele se configurează din panoul „ZoneFlow” din bara laterală. Aici sunt doar setările generale.",
         "data": {
           "weather_entity": "Entitate weather (prognoză)",
           "test_minutes": "Durata testului cu caserole (minute)",
-          "forecast_days": "Câte zile de prognoză mediez"
+          "forecast_days": "Zile de prognoză pentru medie"
         }
-      },
-      "add_zone": {
-        "title": "Adaugă zonă",
-        "description": "Se creează automat o porțiune „Toată zona”; o poți împărți mai târziu.",
-        "data": {"name": "Nume zonă"}
-      },
-      "edit_zone": {"title": "Alege zona", "data": {"zone": "Zonă"}},
-      "zone_menu": {
-        "title": "Zona: {zone}",
-        "description": "Porțiuni: {sections}\nGrupuri:\n{groups}",
-        "data": {"action": "Ce vrei să faci?"}
-      },
-      "rename_zone": {"title": "Redenumește zona", "data": {"name": "Nume zonă"}},
-      "sections": {
-        "title": "Porțiuni",
-        "description": "{sections}",
-        "data": {"action": "Ce vrei să faci?"}
-      },
-      "add_section": {
-        "title": "Adaugă porțiune",
-        "data": {"name": "Nume porțiune", "area": "Suprafață (m²)"}
-      },
-      "edit_section": {
-        "title": "Alege porțiunea",
-        "data": {"section": "Porțiune", "delete": "Șterge porțiunea selectată"}
-      },
-      "section_form": {
-        "title": "Editează porțiunea",
-        "data": {"name": "Nume porțiune", "area": "Suprafață (m²)"}
-      },
-      "edit_group": {
-        "title": "Alege grupul",
-        "data": {"group": "Grup", "delete": "Șterge grupul selectat"}
-      },
-      "group_basic": {
-        "title": "Grup (zona {zone})",
-        "description": "Alege supapele care pornesc DEODATĂ în acest grup.",
-        "data": {"name": "Nume grup", "switches": "Supape (pornesc simultan)"}
-      },
-      "group_rates": {
-        "title": "Caserole grup „{group}” (mm / test)",
-        "description": "Câți mm pune grupul (toate supapele pornite) pe fiecare porțiune, în testul de caserole. 0 dacă nu ajunge acolo."
       }
     }
   },

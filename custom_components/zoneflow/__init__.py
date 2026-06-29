@@ -17,6 +17,8 @@ from .const import (
 )
 from .coordinator import ZoneFlowCoordinator
 from .migrate import async_migrate_entry  # noqa: F401  (expus pentru HA)
+from .panel import async_register_panel, async_remove_panel
+from .websocket import async_register as async_register_ws
 
 type ZoneFlowConfigEntry = ConfigEntry[ZoneFlowCoordinator]
 
@@ -38,6 +40,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ZoneFlowConfigEntry) -> 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     _async_register_services(hass)
+    async_register_ws(hass)
+    await async_register_panel(hass)
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
 
     return True
@@ -66,7 +70,16 @@ async def async_unload_entry(hass: HomeAssistant, entry: ZoneFlowConfigEntry) ->
     coordinator = entry.runtime_data
     coordinator.async_shutdown_schedule()
     await coordinator.async_stop_watering()
-    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+    # Dacă a fost ultima intrare, scoatem panoul din bara laterală.
+    remaining = [
+        e for e in hass.config_entries.async_entries(DOMAIN) if e.entry_id != entry.entry_id
+    ]
+    if not remaining:
+        async_remove_panel(hass)
+
+    return unloaded
 
 
 async def _async_reload_entry(hass: HomeAssistant, entry: ZoneFlowConfigEntry) -> None:

@@ -41,19 +41,26 @@ Formulele trăiesc în [`calc.py`](custom_components/zoneflow/calc.py) (modul pu
 2. Repornește Home Assistant.
 3. **Setări → Dispozitive și servicii → Adaugă integrare → „ZoneFlow"** și alege entitatea
    *weather*, durata testului (implicit 10 min) și câte zile de prognoză mediezi (implicit 7).
-4. Pe cardul integrării apasă **Configurează** și adaugă zonele (vezi mai jos).
+4. Configurează zonele din **panoul „ZoneFlow"** apărut în bara laterală (vezi mai jos).
 
-## Configurarea zonelor (butonul „Configurează")
+## Panoul ZoneFlow (bara laterală)
 
-Meniu: **Setări generale**, **Adaugă zonă**, **Editează / șterge zonă**, **Salvează și ieși**.
-Per zonă: redenumește, **Gestionează porțiuni** (nume + m²), **Adaugă/Editează/Șterge grup**.
-La crearea zonei se face automat o porțiune „Toată zona" (zonele simple sunt gata imediat).
-Pentru un **grup** alegi: nume, **supapele** care pornesc deodată, apoi **rata (mm)** pe fiecare
-porțiune. Modificările se aplică la **„Salvează și ieși"** (integrarea se reîncarcă).
+După instalare apare o pagină proprie **ZoneFlow** în meniul din stânga, cu tab-uri:
+
+- **Stare** — media temperaturii, ținta, ploaia prevăzută, următoarea udare, durata fiecărui
+  grup, plus butoane **Udă acum / Oprește**.
+- **Zone** — editorul: adaugi zone, fiecare cu **porțiuni** (nume + m²) și **grupuri** (nume,
+  **supapele** care pornesc deodată, **rata (mm)** pe fiecare porțiune). Adaugă/șterge inline,
+  apoi **Salvează zonele**.
+- **Setări** — weather, durata test, zile prognoză, ora, zilele de udare, factor, compensare ploaie.
+- **Ajutor** — explicații pentru porțiune / grup / rată / testul cu caserole.
 
 Exemplu *Față*: o porțiune; un grup cu ambele supape; o rată (cea măsurată cu ambele pornite).
 Exemplu *Spate*: două porțiuni (Interior, Margine); grup „Mijloc" cu rată în ambele, grup
 „Margine" cu rată doar în Margine.
+
+> Butonul **Configurează** de pe cardul integrării rămâne, dar doar pentru setările generale —
+> zonele se editează în panou.
 
 ## Ce reglezi din dashboard (entități live)
 

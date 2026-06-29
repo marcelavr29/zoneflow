@@ -2,12 +2,17 @@
   "config": {
     "step": {
       "user": {
-        "title": "ZoneFlow",
-        "description": "General settings. The weekly average temperature is read from the chosen weather entity. Zones are added after install via the \"Configure\" button.",
+        "title": "ZoneFlow — general settings",
+        "description": "Common settings. Zones (what you water and how much) are configured after install from the \"ZoneFlow\" panel that appears in the sidebar.",
         "data": {
           "weather_entity": "Weather entity (forecast)",
           "test_minutes": "Catch-cup test duration (minutes)",
           "forecast_days": "Forecast days to average"
+        },
+        "data_description": {
+          "weather_entity": "Source of the average temperature and forecast rain.",
+          "test_minutes": "How long the test was when you measured the cups (usually 10).",
+          "forecast_days": "Over how many days the temperature is averaged (e.g. 7)."
         }
       }
     }
@@ -15,59 +20,13 @@
   "options": {
     "step": {
       "init": {
-        "title": "ZoneFlow — configuration",
-        "description": "Configured zones:\n{zones}",
-        "data": {"action": "What do you want to do?"}
-      },
-      "general": {
-        "title": "General settings",
+        "title": "ZoneFlow general settings",
+        "description": "Zones are configured from the \"ZoneFlow\" sidebar panel. Here are only the general settings.",
         "data": {
           "weather_entity": "Weather entity (forecast)",
           "test_minutes": "Catch-cup test duration (minutes)",
           "forecast_days": "Forecast days to average"
         }
-      },
-      "add_zone": {
-        "title": "Add zone",
-        "description": "A default section \"Whole zone\" is created; you can split it later.",
-        "data": {"name": "Zone name"}
-      },
-      "edit_zone": {"title": "Pick zone", "data": {"zone": "Zone"}},
-      "zone_menu": {
-        "title": "Zone: {zone}",
-        "description": "Sections: {sections}\nGroups:\n{groups}",
-        "data": {"action": "What do you want to do?"}
-      },
-      "rename_zone": {"title": "Rename zone", "data": {"name": "Zone name"}},
-      "sections": {
-        "title": "Sections",
-        "description": "{sections}",
-        "data": {"action": "What do you want to do?"}
-      },
-      "add_section": {
-        "title": "Add section",
-        "data": {"name": "Section name", "area": "Area (m²)"}
-      },
-      "edit_section": {
-        "title": "Pick section",
-        "data": {"section": "Section", "delete": "Delete selected section"}
-      },
-      "section_form": {
-        "title": "Edit section",
-        "data": {"name": "Section name", "area": "Area (m²)"}
-      },
-      "edit_group": {
-        "title": "Pick group",
-        "data": {"group": "Group", "delete": "Delete selected group"}
-      },
-      "group_basic": {
-        "title": "Group (zone {zone})",
-        "description": "Pick the valves that turn on TOGETHER in this group.",
-        "data": {"name": "Group name", "switches": "Valves (run simultaneously)"}
-      },
-      "group_rates": {
-        "title": "Group \"{group}\" catch-cup values (mm / test)",
-        "description": "How many mm the group (all its valves on) applies to each section during the catch-cup test. 0 if it doesn't reach there."
       }
     }
   },
