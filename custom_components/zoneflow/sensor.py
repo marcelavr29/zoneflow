@@ -1,4 +1,4 @@
-"""Senzori: media temperaturii, ținta, timpii de rulare, litri, următoarea udare."""
+"""Senzori: media temperaturii, ținta, litri, următoarea udare + durata per circuit (dinamic)."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import ZoneFlowConfigEntry
-from .const import CIRCUIT_KEYS, CIRCUIT_NAMES
+from .const import CONF_ID
 from .coordinator import ZoneFlowCoordinator
 from .entity import ZoneFlowEntity
 
@@ -33,64 +33,50 @@ class ZoneFlowSensorDef:
     suggested_precision: int | None = None
 
 
-def _runtime(key: str) -> Callable[[dict], object]:
+_GLOBAL_DEFS: list[ZoneFlowSensorDef] = [
+    ZoneFlowSensorDef(
+        key="avg_temp",
+        name="Media temperaturii (săptămână)",
+        value_fn=lambda d: d.get("avg_temp"),
+        unit=UnitOfTemperature.CELSIUS,
+        device_class=SensorDeviceClass.TEMPERATURE,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_precision=1,
+    ),
+    ZoneFlowSensorDef(
+        key="target_mm",
+        name="Țintă apă",
+        value_fn=lambda d: d.get("target_mm"),
+        unit="L/m²",
+        icon="mdi:water",
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_precision=1,
+    ),
+    ZoneFlowSensorDef(
+        key="liters",
+        name="Apă pe sesiune",
+        value_fn=lambda d: d.get("liters"),
+        unit=UnitOfVolume.LITERS,
+        icon="mdi:water-pump",
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_precision=0,
+    ),
+    ZoneFlowSensorDef(
+        key="next_run",
+        name="Următoarea udare",
+        value_fn=lambda d: d.get("next_run"),
+        device_class=SensorDeviceClass.TIMESTAMP,
+        icon="mdi:calendar-clock",
+    ),
+]
+
+
+def _runtime_value(circuit_id: str) -> Callable[[dict], object]:
     def _fn(data: dict) -> object:
-        val = data.get("runtimes", {}).get(key)
+        val = data.get("runtimes", {}).get(circuit_id)
         return round(val, 1) if val is not None else None
 
     return _fn
-
-
-def _build_defs() -> list[ZoneFlowSensorDef]:
-    defs: list[ZoneFlowSensorDef] = [
-        ZoneFlowSensorDef(
-            key="avg_temp",
-            name="Media temperaturii (săptămână)",
-            value_fn=lambda d: d.get("avg_temp"),
-            unit=UnitOfTemperature.CELSIUS,
-            device_class=SensorDeviceClass.TEMPERATURE,
-            state_class=SensorStateClass.MEASUREMENT,
-            suggested_precision=1,
-        ),
-        ZoneFlowSensorDef(
-            key="target_mm",
-            name="Țintă apă",
-            value_fn=lambda d: d.get("target_mm"),
-            unit="L/m²",
-            icon="mdi:water",
-            state_class=SensorStateClass.MEASUREMENT,
-            suggested_precision=1,
-        ),
-        ZoneFlowSensorDef(
-            key="liters",
-            name="Apă pe sesiune",
-            value_fn=lambda d: d.get("liters"),
-            unit=UnitOfVolume.LITERS,
-            icon="mdi:water-pump",
-            state_class=SensorStateClass.MEASUREMENT,
-            suggested_precision=0,
-        ),
-        ZoneFlowSensorDef(
-            key="next_run",
-            name="Următoarea udare",
-            value_fn=lambda d: d.get("next_run"),
-            device_class=SensorDeviceClass.TIMESTAMP,
-            icon="mdi:calendar-clock",
-        ),
-    ]
-
-    for key in CIRCUIT_KEYS:
-        defs.append(
-            ZoneFlowSensorDef(
-                key=f"runtime_{key}",
-                name=f"Durată · {CIRCUIT_NAMES[key]}",
-                value_fn=_runtime(key),
-                unit=UnitOfTime.MINUTES,
-                icon="mdi:timer-sand",
-                suggested_precision=1,
-            )
-        )
-    return defs
 
 
 async def async_setup_entry(
@@ -99,9 +85,26 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     coordinator = entry.runtime_data
-    async_add_entities(
-        ZoneFlowSensor(coordinator, definition) for definition in _build_defs()
-    )
+    entities: list[SensorEntity] = [
+        ZoneFlowSensor(coordinator, definition) for definition in _GLOBAL_DEFS
+    ]
+    # Câte un senzor de durată pentru fiecare circuit configurat.
+    for circuit in coordinator.circuits_in_order():
+        cid = circuit.get(CONF_ID)
+        entities.append(
+            ZoneFlowSensor(
+                coordinator,
+                ZoneFlowSensorDef(
+                    key=f"{cid}_runtime",
+                    name=f"Durată · {circuit.get('display_name', cid)}",
+                    value_fn=_runtime_value(cid),
+                    unit=UnitOfTime.MINUTES,
+                    icon="mdi:timer-sand",
+                    suggested_precision=1,
+                ),
+            )
+        )
+    async_add_entities(entities)
 
 
 class ZoneFlowSensor(ZoneFlowEntity, CoordinatorEntity[ZoneFlowCoordinator], SensorEntity):

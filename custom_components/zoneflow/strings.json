@@ -3,39 +3,70 @@
     "step": {
       "user": {
         "title": "ZoneFlow",
-        "description": "General settings. The weekly average temperature is read from the chosen weather entity.",
+        "description": "General settings. The weekly average temperature is read from the chosen weather entity. Zones are added after install via the \"Configure\" button.",
         "data": {
           "weather_entity": "Weather entity (forecast)",
           "test_minutes": "Catch-cup test duration (minutes)",
           "forecast_days": "Forecast days to average"
-        }
-      },
-      "zone_a": {
-        "title": "Zone A (no overlap)",
-        "description": "Pick the switches for the two circuits of zone A.",
-        "data": {
-          "zone_a_circuit1": "Circuit 1",
-          "zone_a_circuit2": "Circuit 2"
-        }
-      },
-      "zone_b": {
-        "title": "Zone B (overlapping)",
-        "description": "The \"middle\" circuit waters both halves (weaker at the margin); the \"edge\" circuit tops up the margin half.",
-        "data": {
-          "zone_b_mid": "Middle circuit",
-          "zone_b_edge": "Edge circuit"
         }
       }
     }
   },
   "options": {
+    "error": {
+      "primary_exists": "The zone already has a primary circuit. An overlapping zone can have only one primary."
+    },
     "step": {
       "init": {
-        "title": "ZoneFlow settings",
+        "title": "ZoneFlow — configuration",
+        "description": "Configured zones:\n{zones}",
+        "data": {"action": "What do you want to do?"}
+      },
+      "general": {
+        "title": "General settings",
         "data": {
           "weather_entity": "Weather entity (forecast)",
           "test_minutes": "Catch-cup test duration (minutes)",
           "forecast_days": "Forecast days to average"
+        }
+      },
+      "add_zone": {
+        "title": "Add zone",
+        "data": {"name": "Zone name", "mode": "Zone type"}
+      },
+      "edit_zone": {
+        "title": "Pick zone",
+        "data": {"zone": "Zone"}
+      },
+      "zone_menu": {
+        "title": "Zone: {zone}",
+        "description": "Circuits:\n{circuits}",
+        "data": {"action": "What do you want to do?"}
+      },
+      "rename_zone": {
+        "title": "Edit zone",
+        "data": {"name": "Zone name", "mode": "Zone type"}
+      },
+      "edit_circuit": {
+        "title": "Pick circuit",
+        "data": {"circuit": "Circuit", "delete": "Delete selected circuit"}
+      },
+      "circuit_basic": {
+        "title": "Circuit (zone {zone})",
+        "data": {
+          "name": "Circuit name",
+          "switch": "Switch (valve)",
+          "area": "Area (m²)",
+          "role": "Role in zone"
+        }
+      },
+      "circuit_depths": {
+        "title": "Catch-cup values (mm / test)",
+        "description": "Water depth collected in the catch cup during the test. 1 mm = 1 L/m².",
+        "data": {
+          "depth": "Catch cup (mm)",
+          "depth_inner": "Primary catch cup — inner (mm)",
+          "depth_margin": "Primary catch cup — margin (mm)"
         }
       }
     }

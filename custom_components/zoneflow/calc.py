@@ -50,19 +50,33 @@ def runtimes_overlap(
 
     `max(0, …)` e doar o plasă de siguranță pentru valori imposibile.
     """
-    pr_mid_inner = precip_rate(d_mid_inner, test_minutes)
-    pr_mid_margin = precip_rate(d_mid_margin, test_minutes)
-    pr_edge_margin = precip_rate(d_edge_margin, test_minutes)
-
-    t_mid = target_mm / pr_mid_inner if pr_mid_inner > 0 else 0.0
-
-    if pr_edge_margin > 0:
-        deficit = target_mm - pr_mid_margin * t_mid
-        t_edge = max(0.0, deficit / pr_edge_margin)
-    else:
-        t_edge = 0.0
-
+    t_mid = runtime_simple(target_mm, d_mid_inner, test_minutes)
+    t_edge = runtime_edge(target_mm, t_mid, d_mid_margin, d_edge_margin, test_minutes)
     return t_mid, t_edge
+
+
+def runtime_edge(
+    target_mm: float,
+    t_primary: float,
+    primary_margin_depth: float,
+    edge_depth: float,
+    test_minutes: float,
+) -> float:
+    """Minutele unui circuit `edge` ca să completeze deficitul lăsat de primar pe sub-zona lui.
+
+    Pe sub-zona acoperită de acest edge, primarul a depus deja `PR(primary_margin) * t_primary`
+    (sub țintă). Edge-ul adaugă restul:
+
+        t_edge = max(0, (target - PR(primary_margin) * t_primary) / PR(edge))
+
+    Returnează 0 dacă edge-ul nu ajunge acolo (`edge_depth <= 0`) sau dacă primarul deja a
+    atins/depășit ținta (deficit negativ — plasă de siguranță).
+    """
+    pr_edge = precip_rate(edge_depth, test_minutes)
+    if pr_edge <= 0:
+        return 0.0
+    deficit = target_mm - precip_rate(primary_margin_depth, test_minutes) * t_primary
+    return max(0.0, deficit / pr_edge)
 
 
 def overlap_delivered(

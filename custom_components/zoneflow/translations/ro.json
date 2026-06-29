@@ -3,39 +3,70 @@
     "step": {
       "user": {
         "title": "ZoneFlow",
-        "description": "Setări generale. Media temperaturii săptămânale se ia din entitatea weather aleasă.",
+        "description": "Setări generale. Media temperaturii săptămânale se ia din entitatea weather aleasă. Zonele le adaugi după instalare, din butonul „Configurează”.",
         "data": {
           "weather_entity": "Entitate weather (prognoză)",
           "test_minutes": "Durata testului cu caserole (minute)",
           "forecast_days": "Câte zile de prognoză mediez"
-        }
-      },
-      "zone_a": {
-        "title": "Zona A (fără suprapunere)",
-        "description": "Alege switch-urile celor două circuite ale zonei A.",
-        "data": {
-          "zone_a_circuit1": "Circuit 1",
-          "zone_a_circuit2": "Circuit 2"
-        }
-      },
-      "zone_b": {
-        "title": "Zona B (cu suprapunere)",
-        "description": "Circuitul „mijloc” udă ambele jumătăți (mai slab pe margine), iar „margine” completează jumătatea de la margine.",
-        "data": {
-          "zone_b_mid": "Circuit mijloc",
-          "zone_b_edge": "Circuit margine"
         }
       }
     }
   },
   "options": {
+    "error": {
+      "primary_exists": "Zona are deja un circuit primar. O zonă suprapusă poate avea un singur primar."
+    },
     "step": {
       "init": {
-        "title": "Setări irigație",
+        "title": "ZoneFlow — configurare",
+        "description": "Zone configurate:\n{zones}",
+        "data": {"action": "Ce vrei să faci?"}
+      },
+      "general": {
+        "title": "Setări generale",
         "data": {
           "weather_entity": "Entitate weather (prognoză)",
           "test_minutes": "Durata testului cu caserole (minute)",
           "forecast_days": "Câte zile de prognoză mediez"
+        }
+      },
+      "add_zone": {
+        "title": "Adaugă zonă",
+        "data": {"name": "Nume zonă", "mode": "Tip zonă"}
+      },
+      "edit_zone": {
+        "title": "Alege zona",
+        "data": {"zone": "Zonă"}
+      },
+      "zone_menu": {
+        "title": "Zona: {zone}",
+        "description": "Circuite:\n{circuits}",
+        "data": {"action": "Ce vrei să faci?"}
+      },
+      "rename_zone": {
+        "title": "Editează zona",
+        "data": {"name": "Nume zonă", "mode": "Tip zonă"}
+      },
+      "edit_circuit": {
+        "title": "Alege circuitul",
+        "data": {"circuit": "Circuit", "delete": "Șterge circuitul selectat"}
+      },
+      "circuit_basic": {
+        "title": "Circuit (zona {zone})",
+        "data": {
+          "name": "Nume circuit",
+          "switch": "Switch (supapă)",
+          "area": "Suprafață (m²)",
+          "role": "Rol în zonă"
+        }
+      },
+      "circuit_depths": {
+        "title": "Valori caserole (mm / test)",
+        "description": "Adâncimea apei adunate în caserolă în timpul testului. 1 mm = 1 L/m².",
+        "data": {
+          "depth": "Caserolă (mm)",
+          "depth_inner": "Caserolă primar — interior (mm)",
+          "depth_margin": "Caserolă primar — margine (mm)"
         }
       }
     }

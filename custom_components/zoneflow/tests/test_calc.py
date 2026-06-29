@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from calc import (  # noqa: E402
     overlap_delivered,
     precip_rate,
+    runtime_edge,
     runtime_simple,
     runtimes_overlap,
     target_mm,
@@ -63,6 +64,32 @@ def test_overlap_edge_unreachable():
     # edge nu ajunge pe margine (0) => t_edge = 0 chiar dacă există deficit
     _, t_edge = runtimes_overlap(20, d_mid_inner=10, d_mid_margin=6, d_edge_margin=0, test_minutes=10)
     assert t_edge == 0.0
+
+
+def test_runtime_edge_matches_overlap():
+    # runtime_edge trebuie să dea același t_edge ca runtimes_overlap (1 edge)
+    t_mid, t_edge = runtimes_overlap(20, d_mid_inner=10, d_mid_margin=6, d_edge_margin=8, test_minutes=10)
+    assert runtime_edge(20, t_mid, 6, 8, 10) == pytest.approx(t_edge)
+
+
+def test_runtime_edge_no_reach():
+    assert runtime_edge(20, t_primary=20, primary_margin_depth=6, edge_depth=0, test_minutes=10) == 0.0
+
+
+def test_overlap_two_edges_uniform():
+    # Un primar + 2 circuite margine pe sub-zone diferite; toate sub-zonele primesc ținta.
+    q = 20.0
+    t_primary = runtime_simple(q, 10, 10)  # interior: 1mm/min -> 20 min
+    assert t_primary == pytest.approx(20.0)
+    # primar pe margine: 6mm/10min = 0.6 mm/min -> depune 12 mm în 20 min, deficit 8 mm
+    t_e1 = runtime_edge(q, t_primary, primary_margin_depth=6, edge_depth=8, test_minutes=10)
+    t_e2 = runtime_edge(q, t_primary, primary_margin_depth=6, edge_depth=4, test_minutes=10)
+    assert t_e1 == pytest.approx(10.0)  # 8 / 0.8
+    assert t_e2 == pytest.approx(20.0)  # 8 / 0.4
+    # verificare livrare pe fiecare sub-zonă
+    for edge_depth, t_edge in ((8, t_e1), (4, t_e2)):
+        delivered = precip_rate(6, 10) * t_primary + precip_rate(edge_depth, 10) * t_edge
+        assert delivered == pytest.approx(q)
 
 
 def test_weekly_avg():
