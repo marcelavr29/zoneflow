@@ -15,7 +15,7 @@ _LOGGER = logging.getLogger(__name__)
 
 PANEL_URL_PATH = "zoneflow"  # /zoneflow în bara laterală
 _STATIC_URL = "/zoneflow_frontend/zoneflow-panel.js"
-_PANEL_VERSION = "0.8.6"  # bump când se schimbă JS-ul (cache-busting)
+_PANEL_VERSION = "0.8.7"  # bump când se schimbă JS-ul (cache-busting)
 _REGISTERED = "panel_registered"
 
 

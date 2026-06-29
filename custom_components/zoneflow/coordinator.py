@@ -20,8 +20,10 @@ from .const import (
     CONF_FORECAST_DAYS,
     CONF_GROUPS,
     CONF_ID,
+    CONF_MAX_CYCLE,
     CONF_NAME,
     CONF_RATE,
+    CONF_SOAK,
     CONF_SWITCHES,
     CONF_TEST_MINUTES,
     CONF_WEATHER_ENTITY,
@@ -126,15 +128,29 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
         """
         ordered: list[dict] = []
         for zone in self.zones:
+            max_cycle, soak = self._cycle_settings(zone)
             for group in zone.get(CONF_GROUPS, []):
                 ordered.append(
                     {
                         **group,
                         "zone_name": zone.get(CONF_NAME, ""),
                         "display_name": f"{zone.get(CONF_NAME, '')} · {group.get(CONF_NAME, '')}",
+                        "_max_cycle": max_cycle,
+                        "_soak": soak,
                     }
                 )
         return ordered
+
+    def _cycle_settings(self, zone: dict) -> tuple[float, float]:
+        """(max_cycle, soak) pentru o zonă — override din zonă sau fallback la global."""
+        g_max = self.get_float(VAL_MAX_CYCLE, DEFAULT_MAX_CYCLE_MIN)
+        g_soak = self.get_float(VAL_SOAK, DEFAULT_SOAK_MIN)
+        z_max = zone.get(CONF_MAX_CYCLE)
+        z_soak = zone.get(CONF_SOAK)
+        return (
+            _num(z_max, g_max) if z_max not in (None, "") else g_max,
+            _num(z_soak, g_soak) if z_soak not in (None, "") else g_soak,
+        )
 
     def all_switches(self) -> list[str]:
         """Toate entity_id-urile de switch din toate grupurile (unice)."""
@@ -396,7 +412,9 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
                 switches = [s for s in group.get(CONF_SWITCHES, []) if s]
                 if minutes <= 0 or not switches:
                     continue
-                await self._run_group(switches, minutes)
+                await self._run_group(
+                    switches, minutes, group.get("_max_cycle"), group.get("_soak")
+                )
                 watered = True
         except asyncio.CancelledError:
             _LOGGER.info("Ciclu de udare anulat")
@@ -412,10 +430,18 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
             self.async_update_listeners()
             self.recompute()
 
-    async def _run_group(self, switches: list[str], minutes: float) -> None:
+    async def _run_group(
+        self,
+        switches: list[str],
+        minutes: float,
+        max_cycle: float | None = None,
+        soak: float | None = None,
+    ) -> None:
         """Rulează grupul (toate supapele simultan), eventual în reprize (cycle & soak)."""
-        max_cycle = self.get_float(VAL_MAX_CYCLE, DEFAULT_MAX_CYCLE_MIN)
-        soak = self.get_float(VAL_SOAK, DEFAULT_SOAK_MIN)
+        if max_cycle is None:
+            max_cycle = self.get_float(VAL_MAX_CYCLE, DEFAULT_MAX_CYCLE_MIN)
+        if soak is None:
+            soak = self.get_float(VAL_SOAK, DEFAULT_SOAK_MIN)
         cycles = calc.split_cycles(minutes, max_cycle)
         for idx, cycle_min in enumerate(cycles):
             await self._run_once(switches, cycle_min)

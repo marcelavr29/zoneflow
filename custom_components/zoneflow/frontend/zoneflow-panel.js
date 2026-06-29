@@ -196,6 +196,12 @@ class ZoneFlowPanel extends HTMLElement {
           <label class="lbl">Factor zonă (%)
             <input data-z="${zi}" data-f="zfactor" type="number" min="0" max="200" step="5" value="${esc(z.factor_pct != null ? z.factor_pct : 100)}" class="num"/></label>
         </div>
+        <div class="row2">
+          <label class="lbl">Max ciclu (min, gol = global)
+            <input data-z="${zi}" data-f="zmax" type="number" min="0" max="120" step="1" placeholder="global" value="${esc(z.max_cycle != null && z.max_cycle !== "" ? z.max_cycle : "")}" class="num"/></label>
+          <label class="lbl">Soak (min, gol = global)
+            <input data-z="${zi}" data-f="zsoak" type="number" min="0" max="120" step="1" placeholder="global" value="${esc(z.soak != null && z.soak !== "" ? z.soak : "")}" class="num"/></label>
+        </div>
         <div class="sub">Grupuri (supape + rată)</div>
         ${groups}
         <button class="btn small" data-act="add-group" data-z="${zi}">➕ Grup</button>
@@ -330,6 +336,8 @@ class ZoneFlowPanel extends HTMLElement {
     if (d.f === "zname") z.name = el.value;
     else if (d.f === "zarea") z.area = parseFloat(el.value) || 0;
     else if (d.f === "zfactor") z.factor_pct = parseFloat(el.value) || 0;
+    else if (d.f === "zmax") { if (el.value === "") delete z.max_cycle; else z.max_cycle = parseFloat(el.value) || 0; }
+    else if (d.f === "zsoak") { if (el.value === "") delete z.soak; else z.soak = parseFloat(el.value) || 0; }
     else if (d.f === "gname") z.groups[+d.g].name = el.value;
     else if (d.f === "switches")
       z.groups[+d.g].switches = Array.from(el.selectedOptions).map((o) => o.value);

@@ -36,6 +36,9 @@ CONF_ID = "id"
 CONF_NAME = "name"
 CONF_AREA = "area"  # m² ai zonei (pt. raportare litri)
 CONF_FACTOR_PCT = "factor_pct"  # ajustare per zonă (%), default 100
+# Cycle & soak per zonă (opțional); dacă lipsesc → fallback la valorile globale.
+CONF_MAX_CYCLE = "max_cycle"  # minute max/ciclu pentru zonă
+CONF_SOAK = "soak"  # pauză de infiltrare pentru zonă (min)
 
 # Grupuri.
 CONF_GROUPS = "groups"
