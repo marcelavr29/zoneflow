@@ -302,6 +302,11 @@ class ZoneFlowPanel extends HTMLElement {
       <h3>Frecvența (interval automat)</h3>
       <p>Din temperatura medie: <b>≥25°C → la 3 zile</b> (2×/săpt), <b>10-25°C → la 7 zile</b>
       (1×/săpt), <b>&lt;10°C → la 14 zile</b>. Poți trece pe interval manual din Setări.</p>
+      <h3>Cycle &amp; soak per zonă</h3>
+      <p>În <b>Setări</b> ai valorile globale (Minute max/ciclu + Pauză soak). În <b>Zone</b>,
+      fiecare zonă poate avea propriile valori — lăsate <b>goale</b> folosesc globalul, o valoare
+      le suprascrie doar pentru zona aceea, iar <b>0</b> dezactivează reprizele pentru acea zonă
+      (ex. front argilos cu reprize scurte, restul pe global).</p>
       <h3>Furnizor de prognoză</h3>
       <p>ZoneFlow folosește o entitate <code>weather</code> aleasă în Setări (nu un furnizor
       propriu). Dacă „Media temperaturii" e goală, entitatea aleasă nu oferă prognoză cu

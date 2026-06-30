@@ -11,12 +11,14 @@ Integrare Home Assistant pentru irigație, pe principiul **„rar și mult"** (v
   10-25°C → la 7 zile (1×/săpt); <10°C → la 14 zile. (Sau interval manual.)
 - **Durata pe circuit** = `țintă / rată`, unde rata vine din **testul cu caserole** (rulezi
   ~10 min, măsori mm). `1 mm = 1 L/m²`.
-- **Cycle & soak** împarte udarea în reprize cu pauze, ca să intre fără băltire.
+- **Cycle & soak** împarte udarea în reprize cu pauze, ca să intre fără băltire (global în
+  Setări; opțional suprascris **per zonă** — gol = global, `0` = dezactivat pentru zona aia).
 
 ## Model: zone → grupuri
 
 - **Zonă** = o parte a grădinii, cu **suprafață (m²)** și un **factor (%)** opțional
-  (ex. front umbrit 70% → mai puțină apă).
+  (ex. front umbrit 70% → mai puțină apă). Opțional, o zonă poate avea propriile valori de
+  **cycle & soak** (gol = folosește globalul din Setări; `0` = fără reprize în zona aia).
 - **Grup** = una sau mai multe **supape care pornesc deodată** (măsurate împreună la testul cu
   caserole), cu o singură **rată (mm/test)**. Un circuit care pornește singur = grup cu o supapă.
 - **Grupurile rulează secvențial** (presiune constantă); **supapele dintr-un grup, simultan**.
