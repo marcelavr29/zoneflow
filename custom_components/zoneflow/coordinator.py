@@ -43,6 +43,7 @@ from .const import (
     VAL_FACTOR,
     VAL_INTERVAL,
     VAL_MAX_CYCLE,
+    VAL_NOTIFY,
     VAL_RAIN_COMP,
     VAL_SOAK,
     VAL_START_TIME,
@@ -88,12 +89,104 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
         self.rain_mm: float = self._cache.get("rain_mm", 0.0)
 
         self.is_watering = False
+        self._progress: dict | None = None  # starea live a udării în curs
         self._watering_task: asyncio.Task | None = None
         self._unsub_time: CALLBACK_TYPE | None = None
 
         # Data ultimei udări reale (persistată) — baza intervalului între udări.
         self.last_run: dt.date | None = self._cache.get("last_run")
         self._store: Store = Store(hass, 1, f"{DOMAIN}_{entry.entry_id}")
+
+        # Istoric sesiuni + statistici (persistate).
+        self._history_store: Store = Store(hass, 1, f"{DOMAIN}_history_{entry.entry_id}")
+        self._history: list[dict] = self._cache.get("history", [])
+        self.total_liters: float = self._cache.get("total_liters", 0.0)
+        self.skip_count: int = self._cache.get("skip_count", 0)
+        self.last_duration: float = self._cache.get("last_duration", 0.0)
+        self._skip_next: bool = self._cache.get("skip_next", False)
+
+    async def async_load_history(self) -> None:
+        data = await self._history_store.async_load() or {}
+        self._history = data.get("records", [])
+        self.total_liters = data.get("total_liters", 0.0)
+        self.skip_count = data.get("skip_count", 0)
+        self._skip_next = data.get("skip_next", False)
+        self.last_duration = next(
+            (r.get("minutes", 0.0) for r in reversed(self._history) if r.get("type") == "run"),
+            0.0,
+        )
+        self._cache_history()
+
+    def _cache_history(self) -> None:
+        self._cache["history"] = self._history
+        self._cache["total_liters"] = self.total_liters
+        self._cache["skip_count"] = self.skip_count
+        self._cache["last_duration"] = self.last_duration
+        self._cache["skip_next"] = self._skip_next
+
+    async def _save_history(self) -> None:
+        self._cache_history()
+        await self._history_store.async_save(
+            {
+                "records": self._history[-200:],
+                "total_liters": self.total_liters,
+                "skip_count": self.skip_count,
+                "skip_next": self._skip_next,
+            }
+        )
+
+    def _record(self, record: dict) -> None:
+        """Adaugă o sesiune în istoric, actualizează statisticile și persistă."""
+        record["ts"] = dt_util.now().isoformat()
+        self._history.append(record)
+        self._history = self._history[-200:]
+        if record.get("type") == "run":
+            self.total_liters += float(record.get("liters", 0.0))
+            self.last_duration = float(record.get("minutes", 0.0))
+        elif record.get("type") == "skip":
+            self.skip_count += 1
+        if self.hass is not None:
+            self.hass.async_create_task(self._save_history())
+            self.recompute()
+
+    def history(self) -> dict:
+        """Agregări pentru tab-ul Rapoarte (totaluri pe perioade + defalcare pe zonă)."""
+        now = dt_util.now()
+        runs = [r for r in self._history if r.get("type") == "run"]
+
+        def _since(days: int) -> float:
+            cutoff = now - dt.timedelta(days=days)
+            total = 0.0
+            for r in runs:
+                ts = dt_util.parse_datetime(r.get("ts", ""))
+                if ts and ts >= cutoff:
+                    total += float(r.get("liters", 0.0))
+            return round(total, 1)
+
+        by_zone: dict[str, dict] = {}
+        cutoff = now - dt.timedelta(days=30)
+        for r in runs:
+            ts = dt_util.parse_datetime(r.get("ts", ""))
+            if not ts or ts < cutoff:
+                continue
+            for z in r.get("zones", []):
+                d = by_zone.setdefault(z.get("name", "?"), {"liters": 0.0, "minutes": 0.0})
+                d["liters"] += float(z.get("liters", 0.0))
+                d["minutes"] += float(z.get("minutes", 0.0))
+        return {
+            "records": list(reversed(self._history[-50:])),
+            "totals": {
+                "today": _since(1),
+                "week": _since(7),
+                "month": _since(30),
+                "count": len(runs),
+                "skipped": self.skip_count,
+            },
+            "by_zone": [
+                {"name": k, "liters": round(v["liters"], 1), "minutes": round(v["minutes"], 1)}
+                for k, v in sorted(by_zone.items())
+            ],
+        }
 
     async def async_load_store(self) -> None:
         """Încarcă `last_run` din storage; la prima instalare îl ancorează la azi."""
@@ -312,6 +405,11 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
             "last_run": self.last_run.isoformat() if self.last_run else None,
             "interval_days": self._interval(),
             "auto_interval": self.get_bool(VAL_AUTO_INTERVAL, True),
+            "watering": {"active": self.is_watering, "current": self._progress},
+            "skip_next": self._skip_next,
+            "total_liters": round(self.total_liters, 1),
+            "skip_count": self.skip_count,
+            "last_duration": round(self.last_duration, 1),
         }
 
     @callback
@@ -351,6 +449,15 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
         if self.last_run is None:
             self.last_run = now.date()
         if (now.date() - self.last_run).days >= self._interval():
+            if self._skip_next:
+                # Sărim manual peste această sesiune și reamânăm cu un interval.
+                self._skip_next = False
+                self.last_run = now.date()
+                self.hass.async_create_task(self._save_last_run())
+                self._record({"type": "skip", "reason": "manual"})
+                self._notify("ZoneFlow — udare sărită", "Ai sărit manual peste această udare.")
+                self.recompute()
+                return
             _LOGGER.info("Pornire programată a irigației (interval atins)")
             self.start_watering()
 
@@ -380,6 +487,77 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
             self.recompute()
         _LOGGER.info("Programare forțată: udare scadentă la următoarea oră (%s)", self.last_run)
 
+    # -------------------------------------------------------------- progres / extra
+    @callback
+    def _set_progress(
+        self, label: str, phase: str, seconds: float, cycle: int, cycles: int, upcoming: list[str]
+    ) -> None:
+        end = dt_util.now() + dt.timedelta(seconds=seconds)
+        self._progress = {
+            "label": label,
+            "phase": phase,
+            "ends_at": end.isoformat(),
+            "cycle": cycle,
+            "cycles": cycles,
+            "upcoming": upcoming,
+        }
+        self.async_update_listeners()
+        self.recompute()
+
+    def _notify(self, title: str, message: str) -> None:
+        if not self.get_bool(VAL_NOTIFY, True) or self.hass is None:
+            return
+        self.hass.async_create_task(
+            self.hass.services.async_call(
+                "persistent_notification",
+                "create",
+                {
+                    "title": title,
+                    "message": message,
+                    "notification_id": f"{DOMAIN}_{self.entry.entry_id}",
+                },
+                blocking=False,
+            )
+        )
+
+    @callback
+    def skip_next(self) -> None:
+        """Comută „sări peste următoarea udare programată"."""
+        self._skip_next = not self._skip_next
+        if self.hass is not None:
+            self.hass.async_create_task(self._save_history())
+            self.recompute()
+
+    @callback
+    def test_zone(self, zone_id: str, minutes: float) -> None:
+        if self.is_watering:
+            _LOGGER.warning("Udare în curs; ignor testul de zonă")
+            return
+        self._watering_task = self.hass.async_create_task(self._run_test(zone_id, minutes))
+
+    def _record_run(self, runtimes: dict[str, float]) -> None:
+        zones_rec: list[dict] = []
+        total_min = 0.0
+        for zone in self.zones:
+            zmin = sum(
+                runtimes.get(g.get(CONF_ID), 0.0) for g in zone.get(CONF_GROUPS, [])
+            )
+            if zmin <= 0:
+                continue
+            zliters = self._zone_target(zone) * _num(zone.get(CONF_AREA), DEFAULT_AREA)
+            zones_rec.append(
+                {"name": zone.get(CONF_NAME, ""), "liters": round(zliters, 1), "minutes": round(zmin, 1)}
+            )
+            total_min += zmin
+        self._record(
+            {
+                "type": "run",
+                "liters": round(self._session_liters(), 1),
+                "minutes": round(total_min, 1),
+                "zones": zones_rec,
+            }
+        )
+
     # -------------------------------------------------------------- execuție
     @callback
     def start_watering(self) -> None:
@@ -396,24 +574,29 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
 
     async def _run_cycle(self) -> None:
         runtimes = self.compute_runtimes()
-        groups = self.groups_in_order()
-        if not any(runtimes.get(g.get(CONF_ID), 0.0) > 0 for g in groups):
-            _LOGGER.info(
-                "Sar peste udare: nimic de udat (ploaie prevăzută %.1f mm ≥ țintă, sau țintă 0)",
-                self._rain(),
-            )
+        groups = [
+            g
+            for g in self.groups_in_order()
+            if runtimes.get(g.get(CONF_ID), 0.0) > 0
+            and [s for s in g.get(CONF_SWITCHES, []) if s]
+        ]
+        if not groups:
+            _LOGGER.info("Sar peste udare: nimic de udat (ploaie ≥ țintă sau țintă 0)")
+            self._record({"type": "skip", "reason": "ploaie", "rain": round(self._rain(), 1)})
+            self._notify("ZoneFlow — udare sărită", f"Plouă destul ({self._rain():.0f} mm) — sesiune sărită.")
             return
         self.is_watering = True
         watered = False
         self.async_update_listeners()
+        self._notify("ZoneFlow — start udare", "A început udarea.")
         try:
-            for group in groups:
+            for idx, group in enumerate(groups):
                 minutes = runtimes.get(group.get(CONF_ID), 0.0)
                 switches = [s for s in group.get(CONF_SWITCHES, []) if s]
-                if minutes <= 0 or not switches:
-                    continue
+                upcoming = [g.get("display_name", "") for g in groups[idx + 1 :]]
                 await self._run_group(
-                    switches, minutes, group.get("_max_cycle"), group.get("_soak")
+                    switches, minutes, group.get("_max_cycle"), group.get("_soak"),
+                    label=group.get("display_name", ""), upcoming=upcoming,
                 )
                 watered = True
         except asyncio.CancelledError:
@@ -422,11 +605,40 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
         finally:
             await self.async_all_off()
             self.is_watering = False
+            self._progress = None
             self._watering_task = None
             if watered:
-                # Udare reală → resetăm ceasul intervalului (persistat).
                 self.last_run = dt_util.now().date()
                 self.hass.async_create_task(self._save_last_run())
+                liters = self._session_liters()
+                self._record_run(runtimes)
+                self._notify("ZoneFlow — udare terminată", f"Gata. ~{liters:.0f} L livrați.")
+            self.async_update_listeners()
+            self.recompute()
+
+    async def _run_test(self, zone_id: str, minutes: float) -> None:
+        zone = next((z for z in self.zones if z.get(CONF_ID) == zone_id), None)
+        groups = [
+            g for g in (zone or {}).get(CONF_GROUPS, []) if [s for s in g.get(CONF_SWITCHES, []) if s]
+        ]
+        if not zone or not groups or minutes <= 0:
+            return
+        self.is_watering = True
+        self.async_update_listeners()
+        self._notify("ZoneFlow — test zonă", f"Test {zone.get(CONF_NAME)} · {minutes:.0f} min.")
+        try:
+            for idx, group in enumerate(groups):
+                switches = [s for s in group.get(CONF_SWITCHES, []) if s]
+                upcoming = [f"{zone.get(CONF_NAME)} · {g.get(CONF_NAME)}" for g in groups[idx + 1 :]]
+                label = f"TEST · {zone.get(CONF_NAME)} · {group.get(CONF_NAME)}"
+                await self._run_group(switches, minutes, 0, 0, label=label, upcoming=upcoming)
+        except asyncio.CancelledError:
+            raise
+        finally:
+            await self.async_all_off()
+            self.is_watering = False
+            self._progress = None
+            self._watering_task = None
             self.async_update_listeners()
             self.recompute()
 
@@ -436,6 +648,8 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
         minutes: float,
         max_cycle: float | None = None,
         soak: float | None = None,
+        label: str = "",
+        upcoming: list[str] | None = None,
     ) -> None:
         """Rulează grupul (toate supapele simultan), eventual în reprize (cycle & soak)."""
         if max_cycle is None:
@@ -443,10 +657,13 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
         if soak is None:
             soak = self.get_float(VAL_SOAK, DEFAULT_SOAK_MIN)
         cycles = calc.split_cycles(minutes, max_cycle)
+        n = len(cycles)
         for idx, cycle_min in enumerate(cycles):
+            self._set_progress(label, "udare", cycle_min * 60, idx + 1, n, upcoming or [])
             await self._run_once(switches, cycle_min)
-            if idx < len(cycles) - 1 and soak > 0:
+            if idx < n - 1 and soak > 0:
                 _LOGGER.info("Pauză de infiltrare %.0f min", soak)
+                self._set_progress(label, "soak", soak * 60, idx + 1, n, upcoming or [])
                 await asyncio.sleep(soak * 60)
 
     async def _run_once(self, switches: list[str], minutes: float) -> None:

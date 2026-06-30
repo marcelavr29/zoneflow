@@ -50,6 +50,11 @@ După instalare apare o pagină proprie **ZoneFlow** în meniul din stânga, cu 
 - **Setări** — weather, durata test, zile prognoză, **Țintă (L/m²)**, ajustare globală, ora,
   **interval automat/manual**, compensare ploaie, **cycle & soak** (minute max/ciclu + pauză).
 - **Ajutor** — principiul „rar și mult", grup / rată / testul cu caserole, pragurile de interval.
+- **Rapoarte** — apă azi/7z/30z, nr. udări, sesiuni sărite, defalcare pe zonă și istoricul sesiunilor.
+
+În timpul udării, tab-ul **Stare** arată live: zona/grupul curent, **cât mai rămâne** (cronometru),
+faza (udare/soak + repriza) și ce urmează. Tot de aici: **Sări următoarea udare** și, în editorul
+de **Zone**, un buton **Test** (rulează o zonă N minute, să verifici aspersoarele).
 
 Exemplu *Față*: un grup cu ambele supape + o rată; zonă cu factor 70% dacă e umbrită.
 Exemplu *Spate*: două grupuri (C1, C2), fiecare rulează după rata lui.
@@ -63,10 +68,10 @@ Exemplu *Spate*: două grupuri (C1, C2), fiecare rulează după rata lui.
 | --- | --- |
 | `number` | **Țintă apă (L/m²)**, **Ajustare globală**, **Interval manual**, **Minute max/ciclu**, **Pauză infiltrare** |
 | `time` | **Ora de udare** |
-| `switch` | **Irigație activă**, **Compensare ploaie**, **Interval automat** |
-| `button` | **Udă acum**, **Oprește udarea** |
+| `switch` | **Irigație activă**, **Compensare ploaie**, **Interval automat**, **Notificări** |
+| `button` | **Udă acum**, **Oprește udarea**, **Udă la următoarea oră**, **Sări următoarea udare** |
 | `binary_sensor` | **Udare în curs** |
-| `sensor` | media temperaturii (info), ținta (L/m²), **ploaie prevăzută 24h**, **țintă după ploaie**, **durata fiecărui grup**, apă pe sesiune (L), ultima/următoarea udare |
+| `sensor` | media temperaturii, ținta, ploaie 24h, țintă după ploaie, durata fiecărui grup, apă pe sesiune, ultima/următoarea udare, **Apă total** (`total_increasing` → grafice native HA), **Udări sărite**, **Durata ultimei udări** |
 
 Suprafața/factorul zonei și ratele se setează în panou → **Zone** (nu din dashboard).
 

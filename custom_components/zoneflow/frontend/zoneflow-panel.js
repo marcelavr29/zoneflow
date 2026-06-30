@@ -7,9 +7,16 @@
 const TABS = [
   ["stare", "Stare"],
   ["zone", "Zone"],
+  ["rapoarte", "Rapoarte"],
   ["setari", "Setări"],
   ["ajutor", "Ajutor"],
 ];
+
+const fmtSecs = (s) => {
+  s = Math.max(0, Math.round(s));
+  const m = Math.floor(s / 60);
+  return `${m}:${String(s % 60).padStart(2, "0")}`;
+};
 
 const genId = () =>
   (window.crypto && crypto.randomUUID
@@ -46,14 +53,30 @@ class ZoneFlowPanel extends HTMLElement {
   }
 
   connectedCallback() {
-    // reîmprospătare periodică a stării (nu re-randa în timpul editării zonelor)
-    this._refresh = setInterval(() => {
-      if (this._tab === "stare") this._reload(true);
-    }, 30000);
+    // Ticker 1s: cronometru live + reîmprospătare periodică a stării.
+    this._ticks = 0;
+    this._refresh = setInterval(() => this._tick(), 1000);
   }
 
   disconnectedCallback() {
     if (this._refresh) clearInterval(this._refresh);
+  }
+
+  _tick() {
+    if (this._tab !== "stare" || !this._data) return;
+    const w = (this._data.live || {}).watering || {};
+    if (w.active && w.current) {
+      const remEl = this.shadowRoot.getElementById("live-remaining");
+      const remSec = (new Date(w.current.ends_at).getTime() - Date.now()) / 1000;
+      if (remEl) remEl.textContent = fmtSecs(remSec);
+      // Când expiră reprize/grupul, preluăm starea nouă (o singură dată).
+      if (remSec <= 0 && !this._reloadingLive) {
+        this._reloadingLive = true;
+        this._reload(true).finally(() => { this._reloadingLive = false; });
+      }
+    } else if (++this._ticks % 30 === 0) {
+      this._reload(true);
+    }
   }
 
   async _ws(msg) {
@@ -105,6 +128,7 @@ class ZoneFlowPanel extends HTMLElement {
     else if (!this._data) body = `<div class="muted">Se încarcă…</div>`;
     else if (this._tab === "stare") body = this._renderStare();
     else if (this._tab === "zone") body = this._renderZone();
+    else if (this._tab === "rapoarte") body = this._renderRapoarte();
     else if (this._tab === "setari") body = this._renderSetari();
     else body = this._renderAjutor();
 
@@ -120,6 +144,7 @@ class ZoneFlowPanel extends HTMLElement {
       b.addEventListener("click", () => {
         this._tab = b.dataset.tab;
         this._render();
+        if (this._tab === "rapoarte") this._loadReport();
       })
     );
     this._wire();
@@ -151,18 +176,82 @@ class ZoneFlowPanel extends HTMLElement {
         <div class="card"><span>Ultima udare</span><b>${esc(lr)}</b></div>
         <div class="card"><span>Următoarea udare</span><b>${esc(nr)}</b></div>
       </div>
+      ${this._renderLive(l)}
       ${l.will_skip ? `<div class="note">🌧️ Sesiunea se va sări — plouă cât ținta sau mai mult.</div>` : ""}
-      ${l.is_watering ? `<div class="note ok">💧 Udare în curs…</div>` : ""}
+      ${l.skip_next ? `<div class="note">⏭️ Următoarea udare programată va fi sărită.</div>` : ""}
       <h3>Durata pe grup</h3>
       <table>${rows}</table>
       <div class="actions">
         <button class="btn primary" data-act="run">💧 Udă acum</button>
         <button class="btn" data-act="stop">⏹️ Oprește</button>
         <button class="btn" data-act="schedule">📅 Udă la următoarea oră</button>
+        <button class="btn" data-act="skip-next">${l.skip_next ? "↩️ Anulează skip" : "⏭️ Sări următoarea"}</button>
         <button class="btn" data-act="refresh">↻ Reîmprospătează</button>
       </div>
       <p class="muted">„Udă la următoarea oră" face prima udare să pornească automat la „Ora de
       udare" (ex. la noapte), apoi continuă pe interval.</p>`;
+  }
+
+  _remain(endsAt) {
+    if (!endsAt) return "—";
+    return fmtSecs((new Date(endsAt).getTime() - Date.now()) / 1000);
+  }
+
+  _renderLive(l) {
+    const w = l.watering || {};
+    if (!w.active) return "";
+    const cur = w.current;
+    if (!cur) return `<div class="note ok">💧 Udare în curs…</div>`;
+    const upcoming = (cur.upcoming || []).filter(Boolean).join(" → ") || "—";
+    const phase = cur.phase === "soak" ? "pauză infiltrare" : "udare";
+    const repr = cur.cycles > 1 ? ` · repriza ${cur.cycle}/${cur.cycles}` : "";
+    return `
+      <div class="live">
+        <div class="live-head">💧 Acum: <b>${esc(cur.label)}</b> · ${phase}${repr}</div>
+        <div class="live-rem">rămâne <b id="live-remaining">${this._remain(cur.ends_at)}</b></div>
+        <div class="muted">Urmează: ${esc(upcoming)}</div>
+      </div>`;
+  }
+
+  async _loadReport() {
+    try {
+      this._reportData = await this._ws({ type: "zoneflow/history" });
+    } catch (e) {
+      this._reportData = { error: (e && e.message) || "Eroare" };
+    }
+    if (this._tab === "rapoarte") this._render();
+  }
+
+  _renderRapoarte() {
+    const r = this._reportData;
+    if (!r) return `<div class="muted">Se încarcă rapoartele…</div>`;
+    if (r.error) return `<div class="err">⚠️ ${esc(r.error)}</div>`;
+    const t = r.totals || {};
+    const byZone = (r.by_zone || [])
+      .map((z) => `<tr><td>${esc(z.name)}</td><td class="r">${fmt(z.liters, " L", 0)}</td><td class="r">${fmt(z.minutes, " min", 0)}</td></tr>`)
+      .join("") || `<tr><td colspan="3" class="muted">—</td></tr>`;
+    const records = (r.records || [])
+      .map((rec) => {
+        const d = rec.ts ? new Date(rec.ts).toLocaleString() : "—";
+        if (rec.type === "skip")
+          return `<tr><td>${esc(d)}</td><td colspan="2" class="muted">⏭️ sărită — ${esc(rec.reason || "")}</td></tr>`;
+        const zones = (rec.zones || []).map((z) => z.name).join(", ") || "—";
+        return `<tr><td>${esc(d)}</td><td class="r">${fmt(rec.liters, " L", 0)}</td><td>${esc(zones)} (${fmt(rec.minutes, " min", 0)})</td></tr>`;
+      })
+      .join("") || `<tr><td colspan="3" class="muted">Nicio sesiune încă</td></tr>`;
+    return `
+      <div class="cards">
+        <div class="card"><span>Apă azi</span><b>${fmt(t.today, " L", 0)}</b></div>
+        <div class="card"><span>Apă 7 zile</span><b>${fmt(t.week, " L", 0)}</b></div>
+        <div class="card"><span>Apă 30 zile</span><b>${fmt(t.month, " L", 0)}</b></div>
+        <div class="card"><span>Total udări</span><b>${t.count != null ? t.count : "—"}</b></div>
+        <div class="card"><span>Sărite (ploaie/manual)</span><b>${t.skipped != null ? t.skipped : "—"}</b></div>
+      </div>
+      <h3>Pe zonă (30 zile)</h3>
+      <table>${byZone}</table>
+      <h3>Istoric sesiuni</h3>
+      <table>${records}</table>
+      <div class="actions"><button class="btn" data-act="report-refresh">↻ Reîmprospătează</button></div>`;
   }
 
   _renderZone() {
@@ -205,6 +294,12 @@ class ZoneFlowPanel extends HTMLElement {
         <div class="sub">Grupuri (supape + rată)</div>
         ${groups}
         <button class="btn small" data-act="add-group" data-z="${zi}">➕ Grup</button>
+        <div class="row" style="margin-top:8px;align-items:center;">
+          <span class="muted">Test:</span>
+          <input id="test-${zi}" type="number" min="1" max="60" step="1" value="3" class="num"/>
+          <span class="unit">min</span>
+          <button class="btn small" data-act="test-zone" data-z="${zi}">▶ Rulează</button>
+        </div>
       </div>`;
   }
 
@@ -242,6 +337,7 @@ class ZoneFlowPanel extends HTMLElement {
     const enabledOn = st(c.enabled) && st(c.enabled).state === "on";
     const rainOn = st(c.rain_comp) && st(c.rain_comp).state === "on";
     const autoOn = st(c.auto_interval) ? st(c.auto_interval).state === "on" : true;
+    const notifyOn = st(c.notify) ? st(c.notify).state === "on" : true;
     return `
       <h3>General</h3>
       <label class="lbl">Entitate weather (prognoză)</label>
@@ -265,6 +361,7 @@ class ZoneFlowPanel extends HTMLElement {
       <label class="chk"><input type="checkbox" data-ctrl="toggle" data-eid="${esc(c.enabled)}" ${enabledOn ? "checked" : ""}/> Irigație activă</label>
       <label class="chk"><input type="checkbox" data-ctrl="toggle" data-eid="${esc(c.rain_comp)}" ${rainOn ? "checked" : ""}/> Compensare ploaie</label>
       <label class="chk"><input type="checkbox" data-ctrl="toggle" data-eid="${esc(c.auto_interval)}" ${autoOn ? "checked" : ""}/> Interval automat (după temperatură)</label>
+      <label class="chk"><input type="checkbox" data-ctrl="toggle" data-eid="${esc(c.notify)}" ${notifyOn ? "checked" : ""}/> Notificări (start/stop/sărit)</label>
       <label class="lbl">Interval manual (zile, când „automat" e oprit)
         <input id="interval" type="number" min="1" max="60" step="1" value="${esc(val(c.interval, "3"))}" class="num"/></label>
 
@@ -377,6 +474,20 @@ class ZoneFlowPanel extends HTMLElement {
         this._toast("Prima udare va porni la următoarea oră programată.");
         return void this._reload(true);
       }
+      if (act === "skip-next") {
+        await this._ws({ type: "zoneflow/skip_next" });
+        return void this._reload(true);
+      }
+      if (act === "report-refresh") return void this._loadReport();
+      if (act === "test-zone") {
+        const z = this._zones[+d.z];
+        const inp = this.shadowRoot.getElementById(`test-${d.z}`);
+        const minutes = parseFloat(inp && inp.value) || 3;
+        await this._ws({ type: "zoneflow/test_zone", zone_id: z.id, minutes });
+        this._toast(`Test ${z.name}: ${minutes} min.`);
+        this._tab = "stare";
+        return void this._reload(true);
+      }
 
       if (act === "add-zone") {
         this._zones.push({ id: genId(), name: "Zonă nouă", area: 0, factor_pct: 100, groups: [] });
@@ -473,6 +584,8 @@ const STYLE = `
   .muted{opacity:.6;} .err{color:#e57373;padding:10px;}
   .note{background:rgba(3,169,244,.12);border-radius:8px;padding:8px 12px;margin:10px 0;}
   .note.ok{background:rgba(46,125,50,.18);}
+  .live{background:rgba(3,169,244,.16);border:1px solid var(--primary-color,#03a9f4);border-radius:10px;padding:12px 14px;margin:12px 0;}
+  .live-head{font-size:15px;} .live-rem{font-size:22px;margin:4px 0;font-variant-numeric:tabular-nums;}
   ul.help{line-height:1.5;} ul.help li{margin-bottom:6px;}
   p.muted{line-height:1.5;}
 `;

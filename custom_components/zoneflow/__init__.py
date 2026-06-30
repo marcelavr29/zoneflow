@@ -31,8 +31,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ZoneFlowConfigEntry) -> 
 
     _async_cleanup_orphans(hass, entry)
 
-    # Încarcă data ultimei udări (baza intervalului între udări).
+    # Încarcă data ultimei udări (baza intervalului între udări) + istoricul.
     await coordinator.async_load_store()
+    await coordinator.async_load_history()
 
     # Siguranță: la pornire ne asigurăm că toate supapele sunt închise
     # (în caz că HA a fost repornit în mijlocul unui ciclu).

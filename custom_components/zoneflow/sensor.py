@@ -88,6 +88,31 @@ _GLOBAL_DEFS: list[ZoneFlowSensorDef] = [
         icon="mdi:calendar-clock",
     ),
     ZoneFlowSensorDef(
+        key="total_liters",
+        name="Apă total",
+        value_fn=lambda d: d.get("total_liters"),
+        unit=UnitOfVolume.LITERS,
+        device_class=SensorDeviceClass.WATER,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        icon="mdi:water-pump",
+        suggested_precision=0,
+    ),
+    ZoneFlowSensorDef(
+        key="skip_count",
+        name="Udări sărite",
+        value_fn=lambda d: d.get("skip_count"),
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        icon="mdi:weather-rainy",
+    ),
+    ZoneFlowSensorDef(
+        key="last_duration",
+        name="Durata ultimei udări",
+        value_fn=lambda d: d.get("last_duration"),
+        unit=UnitOfTime.MINUTES,
+        icon="mdi:timer-check",
+        suggested_precision=0,
+    ),
+    ZoneFlowSensorDef(
         key="last_run",
         name="Ultima udare",
         value_fn=lambda d: (

@@ -63,6 +63,7 @@ VAL_INTERVAL = "interval_days"  # interval manual (zile), când Auto e oprit
 VAL_RAIN_COMP = "rain_comp"  # compensarea ploii (scade ploaia prevăzută din țintă)
 VAL_MAX_CYCLE = "max_cycle_min"  # cycle & soak: minute max pe repriză (0 = dezactivat)
 VAL_SOAK = "soak_min"  # cycle & soak: pauză de infiltrare între reprize (min)
+VAL_NOTIFY = "notify"  # notificări HA la start/stop/skip
 
 DEFAULT_TARGET_MM = 15.0
 DEFAULT_INTERVAL_DAYS = 3

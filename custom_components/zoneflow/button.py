@@ -22,6 +22,7 @@ async def async_setup_entry(
             ZoneFlowRunNowButton(coordinator),
             ZoneFlowStopButton(coordinator),
             ZoneFlowScheduleDueButton(coordinator),
+            ZoneFlowSkipNextButton(coordinator),
         ]
     )
 
@@ -66,3 +67,17 @@ class ZoneFlowScheduleDueButton(ZoneFlowEntity, ButtonEntity):
 
     async def async_press(self) -> None:
         self.coordinator.mark_due()
+
+
+class ZoneFlowSkipNextButton(ZoneFlowEntity, ButtonEntity):
+    """Comută „sări peste următoarea udare programată"."""
+
+    _attr_icon = "mdi:skip-next"
+
+    def __init__(self, coordinator: ZoneFlowCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.entry.entry_id}_skip_next"
+        self._attr_name = "Sări următoarea udare"
+
+    async def async_press(self) -> None:
+        self.coordinator.skip_next()

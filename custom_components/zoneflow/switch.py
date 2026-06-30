@@ -11,7 +11,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from . import ZoneFlowConfigEntry
-from .const import VAL_AUTO_INTERVAL, VAL_ENABLED, VAL_RAIN_COMP
+from .const import VAL_AUTO_INTERVAL, VAL_ENABLED, VAL_NOTIFY, VAL_RAIN_COMP
 from .coordinator import ZoneFlowCoordinator
 from .entity import ZoneFlowEntity
 
@@ -45,6 +45,14 @@ async def async_setup_entry(
                 name="Interval automat (după temperatură)",
                 default=True,
                 icon="mdi:calendar-clock",
+                category=EntityCategory.CONFIG,
+            ),
+            ZoneFlowToggle(
+                coordinator,
+                value_key=VAL_NOTIFY,
+                name="Notificări",
+                default=True,
+                icon="mdi:bell",
                 category=EntityCategory.CONFIG,
             ),
         ]

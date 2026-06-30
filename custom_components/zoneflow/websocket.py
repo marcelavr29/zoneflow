@@ -19,6 +19,7 @@ from .const import (
     VAL_FACTOR,
     VAL_INTERVAL,
     VAL_MAX_CYCLE,
+    VAL_NOTIFY,
     VAL_RAIN_COMP,
     VAL_SOAK,
     VAL_START_TIME,
@@ -39,6 +40,9 @@ def async_register(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_run_now)
     websocket_api.async_register_command(hass, ws_stop)
     websocket_api.async_register_command(hass, ws_schedule_due)
+    websocket_api.async_register_command(hass, ws_history)
+    websocket_api.async_register_command(hass, ws_skip_next)
+    websocket_api.async_register_command(hass, ws_test_zone)
 
 
 def _entry(hass: HomeAssistant) -> ConfigEntry | None:
@@ -71,6 +75,7 @@ def _controls(hass: HomeAssistant, entry: ConfigEntry) -> dict:
         "enabled": eid("switch", VAL_ENABLED),
         "rain_comp": eid("switch", VAL_RAIN_COMP),
         "auto_interval": eid("switch", VAL_AUTO_INTERVAL),
+        "notify": eid("switch", VAL_NOTIFY),
         "target": eid("number", VAL_TARGET_MM),
         "factor": eid("number", VAL_FACTOR),
         "interval": eid("number", VAL_INTERVAL),
@@ -202,4 +207,44 @@ async def ws_schedule_due(
     entry = _entry(hass)
     if entry is not None:
         entry.runtime_data.mark_due()
+    connection.send_result(msg["id"], {"ok": True})
+
+
+@websocket_api.websocket_command({vol.Required("type"): "zoneflow/history"})
+@callback
+def ws_history(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict) -> None:
+    entry = _entry(hass)
+    if entry is None:
+        connection.send_error(msg["id"], "not_found", "ZoneFlow nu e configurat")
+        return
+    connection.send_result(msg["id"], entry.runtime_data.history())
+
+
+@websocket_api.websocket_command({vol.Required("type"): "zoneflow/skip_next"})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_skip_next(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict
+) -> None:
+    entry = _entry(hass)
+    if entry is not None:
+        entry.runtime_data.skip_next()
+    connection.send_result(msg["id"], {"ok": True})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "zoneflow/test_zone",
+        vol.Required("zone_id"): str,
+        vol.Required("minutes"): vol.Coerce(float),
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_test_zone(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict
+) -> None:
+    entry = _entry(hass)
+    if entry is not None:
+        entry.runtime_data.test_zone(msg["zone_id"], msg["minutes"])
     connection.send_result(msg["id"], {"ok": True})
