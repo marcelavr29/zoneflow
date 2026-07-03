@@ -22,6 +22,7 @@ from .const import (
     CONF_ID,
     CONF_MAX_CYCLE,
     CONF_NAME,
+    CONF_RAIN_SENSOR,
     CONF_RATE,
     CONF_SOAK,
     CONF_SWITCHES,
@@ -37,6 +38,8 @@ from .const import (
     DEFAULT_TARGET_MM,
     DEFAULT_TEST_MINUTES,
     DOMAIN,
+    RAIN_LEDGER_CREDIT_HOURS,
+    RAIN_LEDGER_TRIM_HOURS,
     RAIN_WINDOW_HOURS,
     VAL_AUTO_INTERVAL,
     VAL_ENABLED,
@@ -96,6 +99,13 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
         # Data ultimei udări reale (persistată) — baza intervalului între udări.
         self.last_run: dt.date | None = self._cache.get("last_run")
         self._store: Store = Store(hass, 1, f"{DOMAIN}_{entry.entry_id}")
+
+        # Registrul ploii căzute: {bucket_orar_iso: mm}. Alimentat orar din nowcast
+        # (prognoza orei imediat următoare) sau, dacă e configurat, din delta unui
+        # senzor cumulativ de ploaie. Golit la fiecare sesiune (udare/reset pe ploaie).
+        self.rain_sensor: str | None = entry.data.get(CONF_RAIN_SENSOR) or None
+        self._rain_ledger: dict[str, float] = self._cache.get("rain_ledger", {})
+        self._rain_sensor_prev: float | None = self._cache.get("rain_sensor_prev")
 
         # Istoric sesiuni + statistici (persistate).
         self._history_store: Store = Store(hass, 1, f"{DOMAIN}_history_{entry.entry_id}")
@@ -189,23 +199,32 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
         }
 
     async def async_load_store(self) -> None:
-        """Încarcă `last_run` din storage; la prima instalare îl ancorează la azi."""
-        data = await self._store.async_load()
-        stored = (data or {}).get("last_run")
+        """Încarcă `last_run` + registrul de ploaie; la prima instalare ancorează la azi."""
+        data = await self._store.async_load() or {}
+        stored = data.get("last_run")
         if stored:
             try:
                 self.last_run = dt.date.fromisoformat(stored)
             except ValueError:
                 self.last_run = None
+        self._rain_ledger = data.get("rain_ledger", self._rain_ledger)
+        self._rain_sensor_prev = data.get("rain_sensor_prev", self._rain_sensor_prev)
         if self.last_run is None:
             self.last_run = dt_util.now().date()
             await self._save_last_run()
         self._cache["last_run"] = self.last_run
+        self._cache["rain_ledger"] = self._rain_ledger
 
     async def _save_last_run(self) -> None:
         self._cache["last_run"] = self.last_run
+        self._cache["rain_ledger"] = self._rain_ledger
+        self._cache["rain_sensor_prev"] = self._rain_sensor_prev
         await self._store.async_save(
-            {"last_run": self.last_run.isoformat() if self.last_run else None}
+            {
+                "last_run": self.last_run.isoformat() if self.last_run else None,
+                "rain_ledger": self._rain_ledger,
+                "rain_sensor_prev": self._rain_sensor_prev,
+            }
         )
 
     # --------------------------------------------------------------- topologie
@@ -315,9 +334,8 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
                     return None
         return None
 
-    async def _fetch_rain_mm(self) -> float:
+    def _rain_from_forecast(self, forecasts: list[dict]) -> float:
         """Ploaia prevăzută (mm, ponderată cu probabilitatea) pe următoarele ore."""
-        forecasts = await self._get_forecast("hourly")
         if not forecasts:
             return 0.0
         now = dt_util.utcnow()
@@ -335,9 +353,71 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
                 )
         return calc.weighted_precipitation(entries)
 
+    # ---------------------------------------------------- registrul ploii căzute
+    def fallen_mm(self) -> float:
+        """Ploaia căzută (mm) în fereastra de credit — de la ultima sesiune încoace."""
+        cutoff = dt_util.utcnow() - dt.timedelta(hours=RAIN_LEDGER_CREDIT_HOURS)
+        total = 0.0
+        for bucket, mm in self._rain_ledger.items():
+            ts = dt_util.parse_datetime(bucket)
+            if ts is not None and dt_util.as_utc(ts) >= cutoff:
+                total += _num(mm, 0.0)
+        return round(total, 1)
+
+    async def _sample_rain(self, forecasts: list[dict]) -> None:
+        """Eșantion orar în registru: nowcast (ora următoare) sau delta senzorului de ploaie.
+
+        Bucket-ul e ora curentă trunchiată → idempotent la refresh-uri repetate/reload-uri.
+        """
+        now = dt_util.utcnow()
+        bucket = now.replace(minute=0, second=0, microsecond=0).isoformat()
+
+        if self.rain_sensor:
+            state = self.hass.states.get(self.rain_sensor)
+            try:
+                value = float(state.state) if state else None
+            except (TypeError, ValueError):
+                value = None
+            if value is not None:
+                if self._rain_sensor_prev is not None:
+                    delta = max(0.0, value - self._rain_sensor_prev)  # robust la resetări
+                    if delta > 0:
+                        self._rain_ledger[bucket] = self._rain_ledger.get(bucket, 0.0) + delta
+                self._rain_sensor_prev = value
+        elif forecasts:
+            # Nowcast: precipitația prognozată pentru ora imediat următoare ≈ ce cade acum.
+            first = forecasts[0]
+            mm = _num(first.get("precipitation"), 0.0)
+            if mm > 0:
+                self._rain_ledger[bucket] = mm  # overwrite: idempotent în aceeași oră
+
+        # Trim bucket-uri vechi.
+        trim_cutoff = now - dt.timedelta(hours=RAIN_LEDGER_TRIM_HOURS)
+        self._rain_ledger = {
+            b: v
+            for b, v in self._rain_ledger.items()
+            if (ts := dt_util.parse_datetime(b)) is not None and dt_util.as_utc(ts) >= trim_cutoff
+        }
+
+        # Ploaie plină = sesiune: solul a primit ținta → resetăm ceasul intervalului.
+        gross = self._gross_target()
+        fallen = self.fallen_mm()
+        if gross and gross > 0 and fallen >= gross:
+            self.last_run = dt_util.now().date()
+            self._rain_ledger = {}
+            self._record({"type": "rain", "mm": fallen})
+            self._notify(
+                "ZoneFlow — ploaia a udat",
+                f"Au căzut ~{fallen:.0f} mm — contează ca udare; următoarea în {self._interval()} zile.",
+            )
+            _LOGGER.info("Ploaie %.1f mm ≥ țintă %.1f — contează ca sesiune", fallen, gross)
+        await self._save_last_run()
+
     async def _async_update_data(self) -> dict:
         self.avg_temp = await self._fetch_avg_temp()
-        self.rain_mm = await self._fetch_rain_mm()
+        hourly = await self._get_forecast("hourly")
+        self.rain_mm = self._rain_from_forecast(hourly)
+        await self._sample_rain(hourly)
         # Salvăm în cache ca un reload ulterior să nu pornească cu valori goale.
         if self.avg_temp is not None:
             self._cache["avg_temp"] = self.avg_temp
@@ -370,8 +450,14 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
         return self.get_float(VAL_TARGET_MM, DEFAULT_TARGET_MM) * self.get_float(VAL_FACTOR, 1.0)
 
     def _rain(self) -> float:
-        """Ploaia luată în calcul (0 dacă compensarea e dezactivată)."""
-        return self.rain_mm if self.get_bool(VAL_RAIN_COMP, True) else 0.0
+        """Ploaia luată în calcul: prognoza 24h + creditul căzut (0 dacă compensarea e oprită).
+
+        Ferestrele sunt disjuncte în timp (viitor vs. trecut), deci nu se dublează; creditul
+        se golește la fiecare sesiune, deci acoperă doar ploaia de după ultima udare.
+        """
+        if not self.get_bool(VAL_RAIN_COMP, True):
+            return 0.0
+        return self.rain_mm + self.fallen_mm()
 
     def _effective_target(self) -> float | None:
         """Ținta globală după ploaie (pentru afișare; per zonă se aplică și factorul zonei)."""
@@ -398,6 +484,7 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
             "effective_target_mm": effective,
             "rain_mm": rain,
             "rain_forecast_mm": self.rain_mm,
+            "rain_fallen_mm": self.fallen_mm(),
             "will_skip": will_skip,
             "runtimes": runtimes,
             "liters": self._session_liters(),
@@ -609,6 +696,8 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
             self._watering_task = None
             if watered:
                 self.last_run = dt_util.now().date()
+                # Creditul de ploaie a fost aplicat acestei sesiuni → îl golim.
+                self._rain_ledger = {}
                 self.hass.async_create_task(self._save_last_run())
                 liters = self._session_liters()
                 self._record_run(runtimes)

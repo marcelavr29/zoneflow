@@ -85,14 +85,19 @@ tab-ul Stare forțează re-interogarea prognozei.
 
 ## Compensarea ploii
 
-Dacă se anunță ploaie, integrarea o **scade din țintă** (1 mm ploaie = 1 L/m²). Folosește
-prognoza **orară** a entității weather pe **următoarele 24h**, ponderând cantitatea cu
-probabilitatea (ex. 10 mm la 50% = 5 mm luați în calcul). Țintă efectivă = `țintă − ploaie`.
-Dacă ploaia prevăzută ≥ țintă, sesiunea se **sare** complet (toate duratele devin 0).
+Ploaia luată în calcul are două componente (1 mm ploaie = 1 L/m²):
 
-Comutatorul **Compensare ploaie** o poate dezactiva (atunci se udă mereu la ținta fixă).
-Vezi `sensor` „Ploaie prevăzută (24h)" și „Țintă după ploaie".
-Se folosește doar prognoza (ploaia deja căzută nu e scăzută).
+- **Prognoza pe 24h** (orară, ponderată cu probabilitatea — ex. 10 mm la 50% = 5 mm).
+- **Registrul ploii căzute**: în fiecare oră, ZoneFlow notează precipitația estimată pentru ora
+  curentă (nowcast) — sau valoarea reală, dacă ai configurat un **senzor de ploaie** în Setări.
+  Ploaia căzută în ultimele **48h** (de la ultima udare) se scade și ea din țintă.
+
+Țintă efectivă = `țintă − prognoză − ploaie căzută`. Dacă totalul ≥ țintă, sesiunea se **sare**;
+iar dacă **ploaia căzută singură** atinge ținta, ea **contează ca o udare completă** (următoarea
+sesiune se mută cu un interval întreg — nu se mai udă a doua zi peste solul ud).
+
+Comutatorul **Compensare ploaie** dezactivează tot mecanismul. Vezi în panou „Ploaie prevăzută
+(24h)" și „Ploaie căzută (48h)".
 
 ## Cum funcționează udarea
 

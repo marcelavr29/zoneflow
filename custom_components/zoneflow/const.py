@@ -19,6 +19,7 @@ PLATFORMS: list[Platform] = [
 CONF_WEATHER_ENTITY = "weather_entity"
 CONF_TEST_MINUTES = "test_minutes"
 CONF_FORECAST_DAYS = "forecast_days"
+CONF_RAIN_SENSOR = "rain_sensor"  # opțional: senzor cumulativ de ploaie (înlocuiește nowcast-ul)
 
 DEFAULT_TEST_MINUTES = 10
 DEFAULT_FORECAST_DAYS = 7
@@ -73,8 +74,10 @@ DEFAULT_SOAK_MIN = 20.0
 # Fereastra de prognoză orară pentru ploaia luată în calcul.
 RAIN_WINDOW_HOURS = 24
 
-# Fereastra de prognoză orară pentru ploaia luată în calcul.
-RAIN_WINDOW_HOURS = 24
+# Registrul ploii căzute: fereastra de credit (cât de „proaspătă" e ploaia care contează)
+# și cât păstrăm bucket-urile orare înainte de curățare.
+RAIN_LEDGER_CREDIT_HOURS = 48
+RAIN_LEDGER_TRIM_HOURS = 72
 
 # Servicii
 SERVICE_RUN_NOW = "run_now"

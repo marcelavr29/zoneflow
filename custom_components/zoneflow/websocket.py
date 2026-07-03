@@ -10,6 +10,7 @@ from homeassistant.core import HomeAssistant, callback
 
 from .const import (
     CONF_FORECAST_DAYS,
+    CONF_RAIN_SENSOR,
     CONF_TEST_MINUTES,
     CONF_WEATHER_ENTITY,
     CONF_ZONES,
@@ -106,12 +107,18 @@ def ws_get(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg:
         {
             "general": {
                 k: entry.data.get(k)
-                for k in (CONF_WEATHER_ENTITY, CONF_TEST_MINUTES, CONF_FORECAST_DAYS)
+                for k in (
+                    CONF_WEATHER_ENTITY,
+                    CONF_TEST_MINUTES,
+                    CONF_FORECAST_DAYS,
+                    CONF_RAIN_SENSOR,
+                )
             },
             "zones": entry.options.get(CONF_ZONES, []),
             "live": live,
             "switches": _entities(hass, "switch"),
             "weathers": _entities(hass, "weather"),
+            "sensors": _entities(hass, "sensor"),
             "controls": _controls(hass, entry),
         },
     )
@@ -153,6 +160,7 @@ async def ws_save_zones(
         vol.Required(CONF_WEATHER_ENTITY): str,
         vol.Required(CONF_TEST_MINUTES): vol.Coerce(float),
         vol.Required(CONF_FORECAST_DAYS): vol.Coerce(int),
+        vol.Optional(CONF_RAIN_SENSOR): vol.Any(str, None),
     }
 )
 @websocket_api.require_admin
@@ -169,6 +177,7 @@ async def ws_save_general(
         CONF_WEATHER_ENTITY: msg[CONF_WEATHER_ENTITY],
         CONF_TEST_MINUTES: msg[CONF_TEST_MINUTES],
         CONF_FORECAST_DAYS: msg[CONF_FORECAST_DAYS],
+        CONF_RAIN_SENSOR: msg.get(CONF_RAIN_SENSOR) or None,
     }
     hass.config_entries.async_update_entry(entry, data=new_data)
     connection.send_result(msg["id"], {"ok": True})

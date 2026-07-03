@@ -170,6 +170,7 @@ class ZoneFlowPanel extends HTMLElement {
         <div class="card"><span>Media temperaturii</span><b>${fmt(l.avg_temp, " °C")}</b></div>
         <div class="card"><span>Țintă</span><b>${fmt(l.target_mm, " L/m²")}</b></div>
         <div class="card"><span>Ploaie prevăzută (24h)</span><b>${fmt(l.rain_forecast_mm, " mm")}</b></div>
+        <div class="card"><span>Ploaie căzută (48h)</span><b>${fmt(l.rain_fallen_mm, " mm")}</b></div>
         <div class="card"><span>Țintă după ploaie</span><b>${fmt(l.effective_target_mm, " L/m²")}</b></div>
         <div class="card"><span>Apă pe sesiune</span><b>${fmt(l.liters, " L", 0)}</b></div>
         <div class="card"><span>Interval</span><b>${l.interval_days != null ? l.interval_days + " zile" : "—"}${l.auto_interval ? " (auto)" : ""}</b></div>
@@ -235,6 +236,8 @@ class ZoneFlowPanel extends HTMLElement {
         const d = rec.ts ? new Date(rec.ts).toLocaleString() : "—";
         if (rec.type === "skip")
           return `<tr><td>${esc(d)}</td><td colspan="2" class="muted">⏭️ sărită — ${esc(rec.reason || "")}</td></tr>`;
+        if (rec.type === "rain")
+          return `<tr><td>${esc(d)}</td><td colspan="2" class="muted">🌧️ ploaia a ținut loc de udare — ${fmt(rec.mm, " mm", 0)}</td></tr>`;
         const zones = (rec.zones || []).map((z) => z.name).join(", ") || "—";
         return `<tr><td>${esc(d)}</td><td class="r">${fmt(rec.liters, " L", 0)}</td><td>${esc(zones)} (${fmt(rec.minutes, " min", 0)})</td></tr>`;
       })
@@ -342,6 +345,13 @@ class ZoneFlowPanel extends HTMLElement {
       <h3>General</h3>
       <label class="lbl">Entitate weather (prognoză)</label>
       <select id="weather">${weathers}</select>
+      <label class="lbl">Senzor de ploaie (opțional — altfel estimez din prognoza orei curente)</label>
+      <select id="rainsensor">
+        <option value="" ${!g.rain_sensor ? "selected" : ""}>— fără (folosesc prognoza) —</option>
+        ${(this._data.sensors || [])
+          .map((s) => `<option value="${esc(s.entity_id)}" ${s.entity_id === g.rain_sensor ? "selected" : ""}>${esc(s.name)}</option>`)
+          .join("")}
+      </select>
       <div class="row2">
         <label class="lbl">Durata testului (min)
           <input id="testmin" type="number" min="1" step="1" value="${esc(g.test_minutes)}" class="num"/></label>
@@ -404,6 +414,13 @@ class ZoneFlowPanel extends HTMLElement {
       fiecare zonă poate avea propriile valori — lăsate <b>goale</b> folosesc globalul, o valoare
       le suprascrie doar pentru zona aceea, iar <b>0</b> dezactivează reprizele pentru acea zonă
       (ex. front argilos cu reprize scurte, restul pe global).</p>
+      <h3>Ploaia căzută (registrul de ploaie)</h3>
+      <p>Pe lângă prognoza pe 24h, ZoneFlow ține un <b>registru al ploii căzute</b>: în fiecare
+      oră notează precipitația estimată pentru ora curentă (sau, dacă ai configurat un
+      <b>senzor de ploaie</b> în Setări, valoarea reală măsurată). Ploaia din ultimele 48h
+      <b>se scade din următoarea udare</b>; dacă a plouat cât ținta (ex. ≥15 mm), ploaia
+      <b>contează ca o udare completă</b> și următoarea sesiune se mută cu un interval întreg.
+      Creditul se golește după fiecare udare.</p>
       <h3>Furnizor de prognoză</h3>
       <p>ZoneFlow folosește o entitate <code>weather</code> aleasă în Setări (nu un furnizor
       propriu). Dacă „Media temperaturii" e goală, entitatea aleasă nu oferă prognoză cu
@@ -526,7 +543,8 @@ class ZoneFlowPanel extends HTMLElement {
         const weather = this.shadowRoot.getElementById("weather").value;
         const testmin = parseFloat(this.shadowRoot.getElementById("testmin").value) || 10;
         const fdays = parseInt(this.shadowRoot.getElementById("fdays").value) || 7;
-        await this._ws({ type: "zoneflow/save_general", weather_entity: weather, test_minutes: testmin, forecast_days: fdays });
+        const rainsensor = this.shadowRoot.getElementById("rainsensor").value || null;
+        await this._ws({ type: "zoneflow/save_general", weather_entity: weather, test_minutes: testmin, forecast_days: fdays, rain_sensor: rainsensor });
         this._toast("Setările au fost salvate.");
         return this._reload(true);
       }
