@@ -542,7 +542,7 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
                 self.last_run = now.date()
                 self.hass.async_create_task(self._save_last_run())
                 self._record({"type": "skip", "reason": "manual"})
-                self._notify("ZoneFlow — udare sărită", "Ai sărit manual peste această udare.")
+                self._notify("ZoneFlow — udare sărită", "Ai sărit manual peste această udare.", kind="skip")
                 self.recompute()
                 return
             _LOGGER.info("Pornire programată a irigației (interval atins)")
@@ -591,7 +591,11 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
         self.async_update_listeners()
         self.recompute()
 
-    def _notify(self, title: str, message: str) -> None:
+    def _notify(self, title: str, message: str, kind: str = "info") -> None:
+        """Notificare: clopoțelul din UI (mereu) + push prin serviciul notify configurat.
+
+        `kind` separă notification_id-urile (start/finish/skip…), ca să nu se suprascrie.
+        """
         if not self.get_bool(VAL_NOTIFY, True) or self.hass is None:
             return
         self.hass.async_create_task(
@@ -601,11 +605,18 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
                 {
                     "title": title,
                     "message": message,
-                    "notification_id": f"{DOMAIN}_{self.entry.entry_id}",
+                    "notification_id": f"{DOMAIN}_{self.entry.entry_id}_{kind}",
                 },
                 blocking=False,
             )
         )
+        service = self.entry.data.get(CONF_NOTIFY_SERVICE)
+        if service:
+            self.hass.async_create_task(
+                self.hass.services.async_call(
+                    "notify", service, {"title": title, "message": message}, blocking=False
+                )
+            )
 
     @callback
     def skip_next(self) -> None:
@@ -670,12 +681,12 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
         if not groups:
             _LOGGER.info("Sar peste udare: nimic de udat (ploaie ≥ țintă sau țintă 0)")
             self._record({"type": "skip", "reason": "ploaie", "rain": round(self._rain(), 1)})
-            self._notify("ZoneFlow — udare sărită", f"Plouă destul ({self._rain():.0f} mm) — sesiune sărită.")
+            self._notify("ZoneFlow — udare sărită", f"Plouă destul ({self._rain():.0f} mm) — sesiune sărită.", kind="skip")
             return
         self.is_watering = True
         watered = False
         self.async_update_listeners()
-        self._notify("ZoneFlow — start udare", "A început udarea.")
+        self._notify("ZoneFlow — start udare", "A început udarea.", kind="start")
         try:
             for idx, group in enumerate(groups):
                 minutes = runtimes.get(group.get(CONF_ID), 0.0)
@@ -701,7 +712,7 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
                 self.hass.async_create_task(self._save_last_run())
                 liters = self._session_liters()
                 self._record_run(runtimes)
-                self._notify("ZoneFlow — udare terminată", f"Gata. ~{liters:.0f} L livrați.")
+                self._notify("ZoneFlow — udare terminată", f"Gata. ~{liters:.0f} L livrați.", kind="finish")
             self.async_update_listeners()
             self.recompute()
 
@@ -714,7 +725,7 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
             return
         self.is_watering = True
         self.async_update_listeners()
-        self._notify("ZoneFlow — test zonă", f"Test {zone.get(CONF_NAME)} · {minutes:.0f} min.")
+        self._notify("ZoneFlow — test zonă", f"Test {zone.get(CONF_NAME)} · {minutes:.0f} min.", kind="test")
         try:
             for idx, group in enumerate(groups):
                 switches = [s for s in group.get(CONF_SWITCHES, []) if s]

@@ -20,6 +20,7 @@ CONF_WEATHER_ENTITY = "weather_entity"
 CONF_TEST_MINUTES = "test_minutes"
 CONF_FORECAST_DAYS = "forecast_days"
 CONF_RAIN_SENSOR = "rain_sensor"  # opțional: senzor cumulativ de ploaie (înlocuiește nowcast-ul)
+CONF_NOTIFY_SERVICE = "notify_service"  # opțional: serviciu notify.* pentru push (ex. mobil)
 
 DEFAULT_TEST_MINUTES = 10
 DEFAULT_FORECAST_DAYS = 7

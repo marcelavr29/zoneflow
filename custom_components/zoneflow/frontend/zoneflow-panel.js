@@ -345,6 +345,13 @@ class ZoneFlowPanel extends HTMLElement {
       <h3>General</h3>
       <label class="lbl">Entitate weather (prognoză)</label>
       <select id="weather">${weathers}</select>
+      <label class="lbl">Trimite notificări către (opțional — altfel doar în interfața HA)</label>
+      <select id="notifyservice">
+        <option value="" ${!g.notify_service ? "selected" : ""}>— doar în interfața HA (clopoțel) —</option>
+        ${(this._data.notify_services || [])
+          .map((s) => `<option value="${esc(s)}" ${s === g.notify_service ? "selected" : ""}>notify.${esc(s)}</option>`)
+          .join("")}
+      </select>
       <label class="lbl">Senzor de ploaie (opțional — altfel estimez din prognoza orei curente)</label>
       <select id="rainsensor">
         <option value="" ${!g.rain_sensor ? "selected" : ""}>— fără (folosesc prognoza) —</option>
@@ -414,6 +421,10 @@ class ZoneFlowPanel extends HTMLElement {
       fiecare zonă poate avea propriile valori — lăsate <b>goale</b> folosesc globalul, o valoare
       le suprascrie doar pentru zona aceea, iar <b>0</b> dezactivează reprizele pentru acea zonă
       (ex. front argilos cu reprize scurte, restul pe global).</p>
+      <h3>Notificări</h3>
+      <p>Implicit, notificările (start/terminat/sărit) apar doar la <b>clopoțelul din interfața
+      HA</b>. Ca să primești <b>push pe telefon</b>, alege în Setări serviciul aplicației
+      companion (ex. <code>notify.mobile_app_telefonul_meu</code>) la „Trimite notificări către".</p>
       <h3>Ploaia căzută (registrul de ploaie)</h3>
       <p>Pe lângă prognoza pe 24h, ZoneFlow ține un <b>registru al ploii căzute</b>: în fiecare
       oră notează precipitația estimată pentru ora curentă (sau, dacă ai configurat un
@@ -544,7 +555,8 @@ class ZoneFlowPanel extends HTMLElement {
         const testmin = parseFloat(this.shadowRoot.getElementById("testmin").value) || 10;
         const fdays = parseInt(this.shadowRoot.getElementById("fdays").value) || 7;
         const rainsensor = this.shadowRoot.getElementById("rainsensor").value || null;
-        await this._ws({ type: "zoneflow/save_general", weather_entity: weather, test_minutes: testmin, forecast_days: fdays, rain_sensor: rainsensor });
+        const notifyservice = this.shadowRoot.getElementById("notifyservice").value || null;
+        await this._ws({ type: "zoneflow/save_general", weather_entity: weather, test_minutes: testmin, forecast_days: fdays, rain_sensor: rainsensor, notify_service: notifyservice });
         this._toast("Setările au fost salvate.");
         return this._reload(true);
       }
