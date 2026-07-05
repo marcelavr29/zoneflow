@@ -630,4 +630,10 @@ const STYLE = `
   p.muted{line-height:1.5;}
 `;
 
-customElements.define("zoneflow-panel", ZoneFlowPanel);
+// Guard: modulul poate fi evaluat de două ori în aceeași pagină (URL vechi din cache +
+// URL nou cu hash, după un restart HA fără reload complet) — a doua definire ar arunca
+// „name has already been used with this registry". Versiunea nouă a clasei se activează
+// la următorul load complet de pagină.
+if (!customElements.get("zoneflow-panel")) {
+  customElements.define("zoneflow-panel", ZoneFlowPanel);
+}
