@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from pathlib import Path
 
@@ -15,8 +16,20 @@ _LOGGER = logging.getLogger(__name__)
 
 PANEL_URL_PATH = "zoneflow"  # /zoneflow în bara laterală
 _STATIC_URL = "/zoneflow_frontend/zoneflow-panel.js"
-_PANEL_VERSION = "0.8.8"  # bump când se schimbă JS-ul (cache-busting)
 _REGISTERED = "panel_registered"
+
+
+def _js_hash(js_path: Path) -> str:
+    """Cache-busting automat: `?v=` derivat din conținutul JS-ului.
+
+    URL-ul modulului se schimbă exact când se schimbă fișierul → browserul reîncarcă
+    singur după update, fără hard refresh și fără bump manual de versiune (care a
+    eșuat silențios în release-urile 0.9.0–0.10.2).
+    """
+    try:
+        return hashlib.md5(js_path.read_bytes()).hexdigest()[:10]
+    except OSError:
+        return "0"
 
 
 async def async_register_panel(hass: HomeAssistant) -> None:
@@ -34,18 +47,19 @@ async def async_register_panel(hass: HomeAssistant) -> None:
         # Calea poate fi deja înregistrată (ex. la un reload în aceeași sesiune) — ignorăm.
         _LOGGER.debug("Calea statică ZoneFlow deja înregistrată: %s", err)
 
+    version = await hass.async_add_executor_job(_js_hash, js_path)
     await panel_custom.async_register_panel(
         hass,
         webcomponent_name="zoneflow-panel",
         frontend_url_path=PANEL_URL_PATH,
-        module_url=f"{_STATIC_URL}?v={_PANEL_VERSION}",
+        module_url=f"{_STATIC_URL}?v={version}",
         sidebar_title="ZoneFlow",
         sidebar_icon="mdi:sprinkler-variant",
         require_admin=False,
         config={},
     )
     store[_REGISTERED] = True
-    _LOGGER.debug("Panou ZoneFlow înregistrat")
+    _LOGGER.debug("Panou ZoneFlow înregistrat (v=%s)", version)
 
 
 @callback
