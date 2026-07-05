@@ -44,6 +44,7 @@ def async_register(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_schedule_due)
     websocket_api.async_register_command(hass, ws_history)
     websocket_api.async_register_command(hass, ws_skip_next)
+    websocket_api.async_register_command(hass, ws_postpone)
     websocket_api.async_register_command(hass, ws_test_zone)
 
 
@@ -243,6 +244,18 @@ async def ws_skip_next(
     entry = _entry(hass)
     if entry is not None:
         entry.runtime_data.skip_next()
+    connection.send_result(msg["id"], {"ok": True})
+
+
+@websocket_api.websocket_command({vol.Required("type"): "zoneflow/postpone"})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_postpone(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict
+) -> None:
+    entry = _entry(hass)
+    if entry is not None:
+        entry.runtime_data.postpone()
     connection.send_result(msg["id"], {"ok": True})
 
 

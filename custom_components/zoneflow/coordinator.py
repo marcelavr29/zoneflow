@@ -619,6 +619,28 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
             )
 
     @callback
+    def postpone(self) -> None:
+        """Amână următoarea udare cu o zi (ex. testul cu șurubelnița: solul e încă umed).
+
+        Noua scadență = max(scadența curentă, azi) + 1 zi; apăsat de N ori → +N zile.
+        """
+        today = dt_util.now().date()
+        if self.last_run is None:
+            self.last_run = today
+        due = max(self.last_run + dt.timedelta(days=self._interval()), today)
+        new_due = due + dt.timedelta(days=1)
+        self.last_run = new_due - dt.timedelta(days=self._interval())
+        if self.hass is not None:
+            self.hass.async_create_task(self._save_last_run())
+            self.recompute()
+        self._notify(
+            "ZoneFlow — udare amânată",
+            f"Udarea a fost amânată până pe {new_due.strftime('%d.%m')}.",
+            kind="postpone",
+        )
+        _LOGGER.info("Udare amânată cu o zi → scadentă la %s", new_due)
+
+    @callback
     def skip_next(self) -> None:
         """Comută „sări peste următoarea udare programată"."""
         self._skip_next = not self._skip_next

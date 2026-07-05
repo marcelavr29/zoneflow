@@ -186,6 +186,7 @@ class ZoneFlowPanel extends HTMLElement {
         <button class="btn primary" data-act="run">💧 Udă acum</button>
         <button class="btn" data-act="stop">⏹️ Oprește</button>
         <button class="btn" data-act="schedule">📅 Udă la următoarea oră</button>
+        <button class="btn" data-act="postpone">⏳ Amână 1 zi</button>
         <button class="btn" data-act="skip-next">${l.skip_next ? "↩️ Anulează skip" : "⏭️ Sări următoarea"}</button>
         <button class="btn" data-act="refresh">↻ Reîmprospătează</button>
       </div>
@@ -421,6 +422,10 @@ class ZoneFlowPanel extends HTMLElement {
       fiecare zonă poate avea propriile valori — lăsate <b>goale</b> folosesc globalul, o valoare
       le suprascrie doar pentru zona aceea, iar <b>0</b> dezactivează reprizele pentru acea zonă
       (ex. front argilos cu reprize scurte, restul pe global).</p>
+      <h3>Amână / sări</h3>
+      <p><b>⏳ Amână 1 zi</b> — pentru „testul cu șurubelnița": dacă dimineața șurubelnița intră
+      ușor în sol (încă umed), amâni udarea cu o zi; mâine verifici din nou. Apăsat de mai multe
+      ori → mai multe zile. <b>⏭️ Sări următoarea</b> mută udarea cu un <i>interval întreg</i>.</p>
       <h3>Notificări</h3>
       <p>Implicit, notificările (start/terminat/sărit) apar doar la <b>clopoțelul din interfața
       HA</b>. Ca să primești <b>push pe telefon</b>, alege în Setări serviciul aplicației
@@ -504,6 +509,11 @@ class ZoneFlowPanel extends HTMLElement {
       }
       if (act === "skip-next") {
         await this._ws({ type: "zoneflow/skip_next" });
+        return void this._reload(true);
+      }
+      if (act === "postpone") {
+        await this._ws({ type: "zoneflow/postpone" });
+        this._toast("Udarea a fost amânată cu o zi.");
         return void this._reload(true);
       }
       if (act === "report-refresh") return void this._loadReport();

@@ -23,6 +23,7 @@ async def async_setup_entry(
             ZoneFlowStopButton(coordinator),
             ZoneFlowScheduleDueButton(coordinator),
             ZoneFlowSkipNextButton(coordinator),
+            ZoneFlowPostponeButton(coordinator),
         ]
     )
 
@@ -81,3 +82,17 @@ class ZoneFlowSkipNextButton(ZoneFlowEntity, ButtonEntity):
 
     async def async_press(self) -> None:
         self.coordinator.skip_next()
+
+
+class ZoneFlowPostponeButton(ZoneFlowEntity, ButtonEntity):
+    """Amână următoarea udare cu o zi (solul e încă umed la verificare)."""
+
+    _attr_icon = "mdi:calendar-plus"
+
+    def __init__(self, coordinator: ZoneFlowCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.entry.entry_id}_postpone"
+        self._attr_name = "Amână cu o zi"
+
+    async def async_press(self) -> None:
+        self.coordinator.postpone()
