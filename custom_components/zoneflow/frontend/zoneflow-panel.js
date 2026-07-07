@@ -239,8 +239,11 @@ class ZoneFlowPanel extends HTMLElement {
           return `<tr><td>${esc(d)}</td><td colspan="2" class="muted">⏭️ sărită — ${esc(rec.reason || "")}</td></tr>`;
         if (rec.type === "rain")
           return `<tr><td>${esc(d)}</td><td colspan="2" class="muted">🌧️ ploaia a ținut loc de udare — ${fmt(rec.mm, " mm", 0)}</td></tr>`;
+        if (rec.type === "error")
+          return `<tr><td>${esc(d)}</td><td colspan="2" style="color:#e57373">⚠️ EROARE — udarea nu s-a făcut: ${esc(rec.detail || "")}</td></tr>`;
         const zones = (rec.zones || []).map((z) => z.name).join(", ") || "—";
-        return `<tr><td>${esc(d)}</td><td class="r">${fmt(rec.liters, " L", 0)}</td><td>${esc(zones)} (${fmt(rec.minutes, " min", 0)})</td></tr>`;
+        const warn = rec.failed && rec.failed.length ? ` <span style="color:#ffb300">⚠️ eșuate: ${esc(rec.failed.join("; "))}</span>` : "";
+        return `<tr><td>${esc(d)}</td><td class="r">${fmt(rec.liters, " L", 0)}</td><td>${esc(zones)} (${fmt(rec.minutes, " min", 0)})${warn}</td></tr>`;
       })
       .join("") || `<tr><td colspan="3" class="muted">Nicio sesiune încă</td></tr>`;
     return `

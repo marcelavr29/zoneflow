@@ -57,6 +57,18 @@ _LOGGER = logging.getLogger(__name__)
 
 UPDATE_INTERVAL = dt.timedelta(hours=1)
 
+# Timeout pentru orice comandă către supape (HA nu mai are timeout global la service calls;
+# fără el, o integrare blocată agăța sesiunea la infinit — incident 2026-07-07).
+SWITCH_CALL_TIMEOUT = 30.0
+# Verificări că supapele chiar au pornit (secunde după turn_on).
+VERIFY_DELAYS = (3.0, 8.0)
+# Marjă adăugată la watchdog-ul sesiunii, peste durata estimată (minute).
+WATCHDOG_EXTRA_MIN = 15.0
+
+
+class GroupFailure(Exception):
+    """Un grup de supape nu a putut fi rulat (pornire eșuată / supape rămase off)."""
+
 
 def _num(value: object, default: float) -> float:
     try:
@@ -95,6 +107,12 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
         self._progress: dict | None = None  # starea live a udării în curs
         self._watering_task: asyncio.Task | None = None
         self._unsub_time: CALLBACK_TYPE | None = None
+
+        # Injectabile în teste (valorile de producție vin din constante).
+        self._svc_timeout: float = SWITCH_CALL_TIMEOUT
+        self._verify_delays: tuple[float, ...] = VERIFY_DELAYS
+        self._watchdog_extra_min: float = WATCHDOG_EXTRA_MIN
+        self._retry_sleep: float = 2.0  # pauză între reîncercările de oprire
 
         # Data ultimei udări reale (persistată) — baza intervalului între udări.
         self.last_run: dt.date | None = self._cache.get("last_run")
@@ -655,7 +673,7 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
             return
         self._watering_task = self.hass.async_create_task(self._run_test(zone_id, minutes))
 
-    def _record_run(self, runtimes: dict[str, float]) -> None:
+    def _record_run(self, runtimes: dict[str, float], failed: list[str] | None = None) -> None:
         zones_rec: list[dict] = []
         total_min = 0.0
         for zone in self.zones:
@@ -669,14 +687,15 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
                 {"name": zone.get(CONF_NAME, ""), "liters": round(zliters, 1), "minutes": round(zmin, 1)}
             )
             total_min += zmin
-        self._record(
-            {
-                "type": "run",
-                "liters": round(self._session_liters(), 1),
-                "minutes": round(total_min, 1),
-                "zones": zones_rec,
-            }
-        )
+        record = {
+            "type": "run",
+            "liters": round(self._session_liters(), 1),
+            "minutes": round(total_min, 1),
+            "zones": zones_rec,
+        }
+        if failed:
+            record["failed"] = list(failed)
+        self._record(record)
 
     # -------------------------------------------------------------- execuție
     @callback
@@ -688,9 +707,72 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
         self._watering_task = self.hass.async_create_task(self._run_cycle())
 
     async def async_stop_watering(self) -> None:
-        if self._watering_task is not None and not self._watering_task.done():
-            self._watering_task.cancel()
+        """Oprește ciclul: cancel + reset DEFENSIV al statusului + supape închise (safe)."""
+        task = self._watering_task
+        if task is not None and not task.done():
+            task.cancel()
+        # Resetăm statusul imediat, chiar dacă task-ul e agățat undeva — statusul UI
+        # nu trebuie să depindă de o integrare de supape care nu răspunde.
+        self.is_watering = False
+        self._progress = None
+        self._watering_task = None
+        self.async_update_listeners()
+        self.recompute()
         await self.async_all_off()
+
+    # ------------------------------------------------ comenzi sigure către supape
+    async def _switch_call(self, action: str, switches: list[str]) -> bool:
+        """Comandă către supape cu timeout. NU aruncă niciodată; False la eșec."""
+        try:
+            async with asyncio.timeout(self._svc_timeout):
+                await self.hass.services.async_call(
+                    "switch", action, {"entity_id": switches}, blocking=True
+                )
+            return True
+        except asyncio.CancelledError:
+            raise
+        except Exception as err:  # noqa: BLE001 — inclusiv TimeoutError
+            _LOGGER.error("switch.%s a eșuat pentru %s: %s", action, switches, err)
+            return False
+
+    async def async_all_off(self) -> None:
+        """Oprește toate supapele — cu timeout și 3 încercări; notifică dacă eșuează."""
+        switches = self.all_switches()
+        if not switches:
+            return
+        for _attempt in range(3):
+            if await self._switch_call("turn_off", switches):
+                return
+            await asyncio.sleep(self._retry_sleep)
+        _LOGGER.critical("Nu am putut opri supapele %s după 3 încercări!", switches)
+        self._notify(
+            "ZoneFlow — ATENȚIE",
+            "Nu am putut opri supapele — verifică MANUAL dacă vreo supapă a rămas deschisă!",
+            kind="error",
+        )
+
+    def _any_switch_on(self, switches: list[str]) -> bool:
+        for entity_id in switches:
+            state = self.hass.states.get(entity_id)
+            if state is not None and state.state == "on":
+                return True
+        return False
+
+    # ----------------------------------------------------------------- execuție
+    def _session_budget_min(self, runtimes: dict[str, float], groups: list[dict]) -> float:
+        """Durata maximă estimată a sesiunii (udare + pauze soak) + marjă — pt. watchdog."""
+        total = self._watchdog_extra_min
+        for group in groups:
+            minutes = runtimes.get(group.get(CONF_ID), 0.0)
+            max_cycle = group.get("_max_cycle")
+            soak = group.get("_soak")
+            if max_cycle is None:
+                max_cycle = self.get_float(VAL_MAX_CYCLE, DEFAULT_MAX_CYCLE_MIN)
+            if soak is None:
+                soak = self.get_float(VAL_SOAK, DEFAULT_SOAK_MIN)
+            n_cycles = len(calc.split_cycles(minutes, max_cycle))
+            total += minutes + max(0, n_cycles - 1) * max(0.0, soak)
+        return total
 
     async def _run_cycle(self) -> None:
         runtimes = self.compute_runtimes()
@@ -705,25 +787,46 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
             self._record({"type": "skip", "reason": "ploaie", "rain": round(self._rain(), 1)})
             self._notify("ZoneFlow — udare sărită", f"Plouă destul ({self._rain():.0f} mm) — sesiune sărită.", kind="skip")
             return
+
         self.is_watering = True
-        watered = False
-        self.async_update_listeners()
-        self._notify("ZoneFlow — start udare", "A început udarea.", kind="start")
+        watered_groups: list[str] = []
+        failed: list[str] = []
+        budget_min = self._session_budget_min(runtimes, groups)
         try:
-            for idx, group in enumerate(groups):
-                minutes = runtimes.get(group.get(CONF_ID), 0.0)
-                switches = [s for s in group.get(CONF_SWITCHES, []) if s]
-                upcoming = [g.get("display_name", "") for g in groups[idx + 1 :]]
-                await self._run_group(
-                    switches, minutes, group.get("_max_cycle"), group.get("_soak"),
-                    label=group.get("display_name", ""), upcoming=upcoming,
-                )
-                watered = True
+            self.async_update_listeners()
+            self._notify("ZoneFlow — start udare", "A început udarea.", kind="start")
+            # Watchdog: chiar dacă apare un blocaj neprevăzut, sesiunea se termină garantat.
+            async with asyncio.timeout(budget_min * 60):
+                for idx, group in enumerate(groups):
+                    label = group.get("display_name", "")
+                    minutes = runtimes.get(group.get(CONF_ID), 0.0)
+                    switches = [s for s in group.get(CONF_SWITCHES, []) if s]
+                    upcoming = [g.get("display_name", "") for g in groups[idx + 1 :]]
+                    try:
+                        await self._run_group(
+                            switches, minutes, group.get("_max_cycle"), group.get("_soak"),
+                            label=label, upcoming=upcoming,
+                        )
+                        watered_groups.append(label)
+                    except asyncio.CancelledError:
+                        raise
+                    except GroupFailure as err:
+                        failed.append(f"{label}: {err}")
+                        _LOGGER.error(
+                            "Grupul '%s' a esuat: %s - continui cu urmatorul", label, err
+                        )
+                    except Exception as err:  # noqa: BLE001 — un grup nu omoară sesiunea
+                        failed.append(f"{label}: {err}")
+                        _LOGGER.exception("Eroare neasteptata la grupul '%s'", label)
         except asyncio.CancelledError:
             _LOGGER.info("Ciclu de udare anulat")
             raise
+        except TimeoutError:
+            failed.append(f"watchdog: sesiunea a depășit durata maximă (~{budget_min:.0f} min)")
+            _LOGGER.error("Watchdog: sesiunea a depășit %.0f min — oprire forțată", budget_min)
         finally:
-            await self.async_all_off()
+            # ÎNTÂI statusul (sincron, nu poate agăța) — abia apoi comenzi către supape.
+            watered = bool(watered_groups)
             self.is_watering = False
             self._progress = None
             self._watering_task = None
@@ -733,10 +836,29 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
                 self._rain_ledger = {}
                 self.hass.async_create_task(self._save_last_run())
                 liters = self._session_liters()
-                self._record_run(runtimes)
-                self._notify("ZoneFlow — udare terminată", f"Gata. ~{liters:.0f} L livrați.", kind="finish")
+                self._record_run(runtimes, failed)
+                extra = f" ⚠️ Eșuate: {'; '.join(failed)}" if failed else ""
+                self._notify(
+                    "ZoneFlow — udare terminată",
+                    f"Gata. ~{liters:.0f} L livrați.{extra}",
+                    kind="finish",
+                )
+            elif failed:
+                # Nimic nu s-a udat → NU resetăm last_run (reîncearcă mâine) + alertă.
+                self._record({"type": "error", "detail": "; ".join(failed)})
+                self._notify(
+                    "ZoneFlow — EROARE la udare",
+                    f"Udarea NU s-a făcut: {'; '.join(failed)}. Reîncerc mâine la ora programată.",
+                    kind="error",
+                )
             self.async_update_listeners()
             self.recompute()
+            try:
+                await asyncio.shield(self.async_all_off())
+            except asyncio.CancelledError:
+                pass
+            except Exception:  # noqa: BLE001 — nimic nu are voie să scape din finally
+                _LOGGER.exception("Eroare la închiderea supapelor")
 
     async def _run_test(self, zone_id: str, minutes: float) -> None:
         zone = next((z for z in self.zones if z.get(CONF_ID) == zone_id), None)
@@ -746,23 +868,34 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
         if not zone or not groups or minutes <= 0:
             return
         self.is_watering = True
-        self.async_update_listeners()
-        self._notify("ZoneFlow — test zonă", f"Test {zone.get(CONF_NAME)} · {minutes:.0f} min.", kind="test")
         try:
+            self.async_update_listeners()
+            self._notify("ZoneFlow — test zonă", f"Test {zone.get(CONF_NAME)} · {minutes:.0f} min.", kind="test")
             for idx, group in enumerate(groups):
                 switches = [s for s in group.get(CONF_SWITCHES, []) if s]
                 upcoming = [f"{zone.get(CONF_NAME)} · {g.get(CONF_NAME)}" for g in groups[idx + 1 :]]
                 label = f"TEST · {zone.get(CONF_NAME)} · {group.get(CONF_NAME)}"
-                await self._run_group(switches, minutes, 0, 0, label=label, upcoming=upcoming)
+                try:
+                    await self._run_group(switches, minutes, 0, 0, label=label, upcoming=upcoming)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as err:  # noqa: BLE001
+                    _LOGGER.error("Test esuat pentru '%s': %s", label, err)
+                    self._notify("ZoneFlow — test eșuat", f"{label}: {err}", kind="error")
         except asyncio.CancelledError:
             raise
         finally:
-            await self.async_all_off()
             self.is_watering = False
             self._progress = None
             self._watering_task = None
             self.async_update_listeners()
             self.recompute()
+            try:
+                await asyncio.shield(self.async_all_off())
+            except asyncio.CancelledError:
+                pass
+            except Exception:  # noqa: BLE001
+                _LOGGER.exception("Eroare la închiderea supapelor (test)")
 
     async def _run_group(
         self,
@@ -789,30 +922,38 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
                 await asyncio.sleep(soak * 60)
 
     async def _run_once(self, switches: list[str], minutes: float) -> None:
-        """O singură repriză: pornește supapele simultan, așteaptă, le oprește."""
+        """O repriză: pornește supapele (cu timeout), VERIFICĂ, așteaptă, oprește (safe)."""
         _LOGGER.info("Pornesc grupul %s pentru %.1f min", switches, minutes)
-        await self.hass.services.async_call(
-            "switch", "turn_on", {"entity_id": switches}, blocking=True
-        )
-        try:
-            await asyncio.sleep(minutes * 60)
-        finally:
-            # Oprim grupul chiar dacă ciclul a fost anulat în timpul așteptării.
-            await self.hass.services.async_call(
-                "switch", "turn_off", {"entity_id": switches}, blocking=True
-            )
+        if not await self._switch_call("turn_on", switches):
+            raise GroupFailure("pornirea supapelor a eșuat (timeout sau eroare)")
 
-    async def async_all_off(self) -> None:
-        """Oprește toate supapele (siguranță)."""
-        switches = self.all_switches()
-        if not switches:
-            return
+        total_s = minutes * 60
+        slept = 0.0
         try:
-            await self.hass.services.async_call(
-                "switch", "turn_off", {"entity_id": switches}, blocking=True
-            )
-        except Exception as err:  # noqa: BLE001
-            _LOGGER.debug("Nu pot opri supapele %s: %s", switches, err)
+            # Verificăm că măcar o supapă chiar e pornită — altfel am „uda" degeaba.
+            confirmed = False
+            for delay in self._verify_delays:
+                wait = min(delay - slept, total_s - slept)
+                if wait > 0:
+                    await asyncio.sleep(wait)
+                    slept += wait
+                if self._any_switch_on(switches):
+                    confirmed = True
+                    break
+            if not confirmed:
+                raise GroupFailure("supapele nu s-au pornit (starea a rămas off)")
+            if total_s - slept > 0:
+                await asyncio.sleep(total_s - slept)
+        finally:
+            # Oprim grupul indiferent ce s-a întâmplat; _switch_call nu aruncă.
+            if not await self._switch_call("turn_off", switches):
+                await asyncio.sleep(self._retry_sleep)
+                if not await self._switch_call("turn_off", switches):
+                    self._notify(
+                        "ZoneFlow — ATENȚIE",
+                        f"Nu am putut opri {', '.join(switches)} — verifică MANUAL supapa!",
+                        kind="error",
+                    )
 
     @callback
     def async_shutdown_schedule(self) -> None:
