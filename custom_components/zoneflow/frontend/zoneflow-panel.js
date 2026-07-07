@@ -178,6 +178,7 @@ class ZoneFlowPanel extends HTMLElement {
         <div class="card"><span>Următoarea udare</span><b>${esc(nr)}</b></div>
       </div>
       ${this._renderLive(l)}
+      ${l.next_due ? `<div class="note">⏳ Programare mutată manual (amânare / „udă la ora următoare") — scadentă ${esc(new Date(l.next_due).toLocaleDateString())}.</div>` : ""}
       ${l.will_skip ? `<div class="note">🌧️ Sesiunea se va sări — plouă cât ținta sau mai mult.</div>` : ""}
       ${l.skip_next ? `<div class="note">⏭️ Următoarea udare programată va fi sărită.</div>` : ""}
       <h3>Durata pe grup</h3>
@@ -241,6 +242,10 @@ class ZoneFlowPanel extends HTMLElement {
           return `<tr><td>${esc(d)}</td><td colspan="2" class="muted">🌧️ ploaia a ținut loc de udare — ${fmt(rec.mm, " mm", 0)}</td></tr>`;
         if (rec.type === "error")
           return `<tr><td>${esc(d)}</td><td colspan="2" style="color:#e57373">⚠️ EROARE — udarea nu s-a făcut: ${esc(rec.detail || "")}</td></tr>`;
+        if (rec.type === "postpone")
+          return `<tr><td>${esc(d)}</td><td colspan="2" class="muted">⏳ amânată până la ${rec.until ? esc(new Date(rec.until).toLocaleDateString()) : "—"}</td></tr>`;
+        if (rec.type === "mark_due")
+          return `<tr><td>${esc(d)}</td><td colspan="2" class="muted">📅 marcată scadentă (udă la ora următoare)</td></tr>`;
         const zones = (rec.zones || []).map((z) => z.name).join(", ") || "—";
         const warn = rec.failed && rec.failed.length ? ` <span style="color:#ffb300">⚠️ eșuate: ${esc(rec.failed.join("; "))}</span>` : "";
         return `<tr><td>${esc(d)}</td><td class="r">${fmt(rec.liters, " L", 0)}</td><td>${esc(zones)} (${fmt(rec.minutes, " min", 0)})${warn}</td></tr>`;

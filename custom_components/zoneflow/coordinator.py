@@ -22,6 +22,7 @@ from .const import (
     CONF_ID,
     CONF_MAX_CYCLE,
     CONF_NAME,
+    CONF_NOTIFY_SERVICE,
     CONF_RAIN_SENSOR,
     CONF_RATE,
     CONF_SOAK,
@@ -114,8 +115,12 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
         self._watchdog_extra_min: float = WATCHDOG_EXTRA_MIN
         self._retry_sleep: float = 2.0  # pauză între reîncercările de oprire
 
-        # Data ultimei udări reale (persistată) — baza intervalului între udări.
+        # Data ultimei udări REALE (persistată) — audit, NU ancoră de programare.
+        # NICIODATĂ suprascrisă de amânare/skip/„udă la ora următoare".
         self.last_run: dt.date | None = self._cache.get("last_run")
+        # Override ABSOLUT al următoarei udări (dată fixă) — setat de postpone/mark_due/skip,
+        # imun la schimbarea temperaturii. None ⇒ se derivă din last_run + interval.
+        self.next_due: dt.date | None = self._cache.get("next_due")
         self._store: Store = Store(hass, 1, f"{DOMAIN}_{entry.entry_id}")
 
         # Registrul ploii căzute: {bucket_orar_iso: mm}. Alimentat orar din nowcast
@@ -227,19 +232,30 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
                 self.last_run = None
         self._rain_ledger = data.get("rain_ledger", self._rain_ledger)
         self._rain_sensor_prev = data.get("rain_sensor_prev", self._rain_sensor_prev)
+        nd = data.get("next_due")
+        if nd:
+            try:
+                self.next_due = dt.date.fromisoformat(nd)
+            except ValueError:
+                self.next_due = None
+        # NOTĂ: next_due NU se ancorează la azi la prima instalare (rămâne None); doar
+        # last_run primește ancora, ca prima udare să fie la azi + interval.
         if self.last_run is None:
             self.last_run = dt_util.now().date()
             await self._save_last_run()
         self._cache["last_run"] = self.last_run
+        self._cache["next_due"] = self.next_due
         self._cache["rain_ledger"] = self._rain_ledger
 
     async def _save_last_run(self) -> None:
         self._cache["last_run"] = self.last_run
+        self._cache["next_due"] = self.next_due
         self._cache["rain_ledger"] = self._rain_ledger
         self._cache["rain_sensor_prev"] = self._rain_sensor_prev
         await self._store.async_save(
             {
                 "last_run": self.last_run.isoformat() if self.last_run else None,
+                "next_due": self.next_due.isoformat() if self.next_due else None,
                 "rain_ledger": self._rain_ledger,
                 "rain_sensor_prev": self._rain_sensor_prev,
             }
@@ -422,6 +438,7 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
         fallen = self.fallen_mm()
         if gross and gross > 0 and fallen >= gross:
             self.last_run = dt_util.now().date()
+            self.next_due = None  # consumă override-ul (înăuntrul blocului: save-ul de jos e necondiționat)
             self._rain_ledger = {}
             self._record({"type": "rain", "mm": fallen})
             self._notify(
@@ -508,6 +525,7 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
             "liters": self._session_liters(),
             "next_run": self._next_run(),
             "last_run": self.last_run.isoformat() if self.last_run else None,
+            "next_due": self.next_due.isoformat() if self.next_due else None,
             "interval_days": self._interval(),
             "auto_interval": self.get_bool(VAL_AUTO_INTERVAL, True),
             "watering": {"active": self.is_watering, "current": self._progress},
@@ -547,23 +565,38 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
             return calc.interval_from_temp(self.avg_temp)
         return max(1, int(self.get_float(VAL_INTERVAL, DEFAULT_INTERVAL_DAYS)))
 
+    def _effective_due(self) -> dt.date:
+        """Data scadenței următoarei udări.
+
+        Dacă există un override absolut (`next_due` — de la amânare/skip/mark_due) îl
+        folosește pe acela (imun la schimbarea temperaturii). Altfel derivă din ultima
+        udare reală + intervalul curent. Ancora unică folosită ȘI de declanșare
+        (`_scheduled_fire`), ȘI de afișare (`_next_run`) — nu pot diverge.
+        """
+        if self.next_due is not None:
+            return self.next_due
+        base = self.last_run or dt_util.now().date()
+        return base + dt.timedelta(days=self._interval())
+
     @callback
     def _scheduled_fire(self, now: dt.datetime) -> None:
         if not self.get_bool(VAL_ENABLED, True):
             return
+        # Gardă defensivă DOAR pentru last_run — NU atingem next_due (un override viu
+        # nu are voie să fie șters aici).
         if self.last_run is None:
             self.last_run = now.date()
-        if (now.date() - self.last_run).days >= self._interval():
+        if now.date() >= self._effective_due():
             if self._skip_next:
-                # Sărim manual peste această sesiune și reamânăm cu un interval.
+                # Sărim manual peste această sesiune și reamânăm cu un interval (absolut).
                 self._skip_next = False
-                self.last_run = now.date()
+                self.next_due = now.date() + dt.timedelta(days=self._interval())
                 self.hass.async_create_task(self._save_last_run())
                 self._record({"type": "skip", "reason": "manual"})
                 self._notify("ZoneFlow — udare sărită", "Ai sărit manual peste această udare.", kind="skip")
                 self.recompute()
                 return
-            _LOGGER.info("Pornire programată a irigației (interval atins)")
+            _LOGGER.info("Pornire programată a irigației (scadență atinsă)")
             self.start_watering()
 
     def _next_run(self) -> dt.datetime | None:
@@ -571,8 +604,7 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
         if start is None or not self.get_bool(VAL_ENABLED, True):
             return None
         now = dt_util.now()
-        base = self.last_run or now.date()
-        due = base + dt.timedelta(days=self._interval())
+        due = self._effective_due()
         d = max(due, now.date())
         cand = dt.datetime.combine(d, start, tzinfo=now.tzinfo)
         if cand <= now:
@@ -581,16 +613,17 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
 
     @callback
     def mark_due(self) -> None:
-        """Face următoarea udare programată „scadentă" (ex. prima udare la noapte).
+        """Face următoarea udare scadentă ACUM (ex. prima udare la noapte).
 
-        Setează `last_run` cu un interval în urmă, astfel încât la următoarea oră programată
-        condiția `(azi − last_run) >= interval` să fie îndeplinită → udă automat la ora setată.
+        Setează override-ul absolut `next_due = azi` → la următoarea oră programată udă.
+        NU atinge `last_run` (aceea rămâne „ultima udare reală").
         """
-        self.last_run = dt_util.now().date() - dt.timedelta(days=self._interval())
+        self.next_due = dt_util.now().date()
         if self.hass is not None:
             self.hass.async_create_task(self._save_last_run())
+            self._record({"type": "mark_due"})
             self.recompute()
-        _LOGGER.info("Programare forțată: udare scadentă la următoarea oră (%s)", self.last_run)
+        _LOGGER.info("Programare forțată: udare scadentă la următoarea oră (%s)", self.next_due)
 
     # -------------------------------------------------------------- progres / extra
     @callback
@@ -616,25 +649,31 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
         """
         if not self.get_bool(VAL_NOTIFY, True) or self.hass is None:
             return
-        self.hass.async_create_task(
-            self.hass.services.async_call(
-                "persistent_notification",
-                "create",
-                {
-                    "title": title,
-                    "message": message,
-                    "notification_id": f"{DOMAIN}_{self.entry.entry_id}_{kind}",
-                },
-                blocking=False,
-            )
-        )
-        service = self.entry.data.get(CONF_NOTIFY_SERVICE)
-        if service:
+        # CRITIC: o notificare care eșuează NU are voie să oprească udarea. Orice eroare
+        # aici (serviciu inexistent, nume nedefinit etc.) e prinsă și logată, niciodată
+        # propagată în _run_cycle. (Incident 2026-07-07: un NameError aici a blocat sesiunea.)
+        try:
             self.hass.async_create_task(
                 self.hass.services.async_call(
-                    "notify", service, {"title": title, "message": message}, blocking=False
+                    "persistent_notification",
+                    "create",
+                    {
+                        "title": title,
+                        "message": message,
+                        "notification_id": f"{DOMAIN}_{self.entry.entry_id}_{kind}",
+                    },
+                    blocking=False,
                 )
             )
+            service = self.entry.data.get(CONF_NOTIFY_SERVICE)
+            if service:
+                self.hass.async_create_task(
+                    self.hass.services.async_call(
+                        "notify", service, {"title": title, "message": message}, blocking=False
+                    )
+                )
+        except Exception:  # noqa: BLE001 — notificarea e best-effort, udarea are prioritate
+            _LOGGER.exception("Notificarea a eșuat (ignor, nu opresc udarea)")
 
     @callback
     def postpone(self) -> None:
@@ -643,13 +682,13 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
         Noua scadență = max(scadența curentă, azi) + 1 zi; apăsat de N ori → +N zile.
         """
         today = dt_util.now().date()
-        if self.last_run is None:
-            self.last_run = today
-        due = max(self.last_run + dt.timedelta(days=self._interval()), today)
-        new_due = due + dt.timedelta(days=1)
-        self.last_run = new_due - dt.timedelta(days=self._interval())
+        # Override ABSOLUT (imun la temperatură): scadența nouă = max(scadența curentă, azi) + 1 zi.
+        # NU atinge last_run („ultima udare reală"). Apăsat de N ori → stivuiește +N zile.
+        new_due = max(self._effective_due(), today) + dt.timedelta(days=1)
+        self.next_due = new_due
         if self.hass is not None:
             self.hass.async_create_task(self._save_last_run())
+            self._record({"type": "postpone", "until": new_due.isoformat()})
             self.recompute()
         self._notify(
             "ZoneFlow — udare amânată",
@@ -832,6 +871,7 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
             self._watering_task = None
             if watered:
                 self.last_run = dt_util.now().date()
+                self.next_due = None  # udare reușită → consumă orice override (amânare/skip/mark_due)
                 # Creditul de ploaie a fost aplicat acestei sesiuni → îl golim.
                 self._rain_ledger = {}
                 self.hass.async_create_task(self._save_last_run())

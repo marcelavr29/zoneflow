@@ -6,6 +6,7 @@ Invariantul central: `is_watering` NU rămâne niciodată blocat pe True.
 """
 
 import asyncio
+import datetime as dt
 import os
 import sys
 import time
@@ -16,6 +17,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
 from custom_components.zoneflow.coordinator import ZoneFlowCoordinator  # noqa: E402
 from custom_components.zoneflow.const import (  # noqa: E402
+    CONF_NOTIFY_SERVICE,
     VAL_FACTOR,
     VAL_MAX_CYCLE,
     VAL_NOTIFY,
@@ -23,6 +25,7 @@ from custom_components.zoneflow.const import (  # noqa: E402
     VAL_SOAK,
     VAL_TARGET_MM,
 )
+from homeassistant.util import dt as dt_util  # noqa: E402
 
 
 class FakeState:
@@ -113,6 +116,7 @@ def make_coordinator(hass, runtime_min=0.005):
     c._progress = None
     c._watering_task = None
     c.last_run = None
+    c.next_due = None
     c._history = []
     c.total_liters = 0.0
     c.skip_count = 0
@@ -276,5 +280,56 @@ def test_happy_path_waters_and_records():
         # ambele grupuri au fost pornite și oprite
         on_calls = [x for x in hass.services.calls if x[1] == "turn_on"]
         assert len(on_calls) == 2
+
+    asyncio.run(main())
+
+
+def test_watering_succeeds_with_notifications_enabled():
+    """REGRESIE incident 2026-07-07: cu notificările ON + serviciu de push configurat,
+    _notify arunca NameError (CONF_NOTIFY_SERVICE neimportat) → _run_cycle crăpa înainte de
+    orice supapă → status blocat, zero apă. Acum trebuie să ude ȘI să trimită push-ul."""
+
+    async def main():
+        hass = FakeHass()
+        c = make_coordinator(hass)
+        c.values[VAL_NOTIFY] = True
+        c.entry.data = {CONF_NOTIFY_SERVICE: "mobile_app_test"}
+        # folosește _notify REAL (nu stubul) — reproduce exact scenariul incidentului
+        c._notify = ZoneFlowCoordinator._notify.__get__(c, ZoneFlowCoordinator)
+        await c._run_cycle()
+        await asyncio.sleep(0.05)
+        assert c.is_watering is False
+        assert c.last_run is not None  # A UDAT (înainte de fix: NameError → nu uda deloc)
+        on_calls = [x for x in hass.services.calls if x[1] == "turn_on"]
+        assert len(on_calls) == 2
+        # ambele canale de notificare au fost folosite (FakeServices ține (domain, service, ids))
+        assert any(x[0] == "persistent_notification" and x[1] == "create" for x in hass.services.calls)
+        assert any(x[0] == "notify" and x[1] == "mobile_app_test" for x in hass.services.calls)
+
+    asyncio.run(main())
+
+
+def test_successful_watering_clears_override():
+    async def main():
+        hass = FakeHass()
+        c = make_coordinator(hass)
+        c.next_due = dt_util.now().date()  # override activ (ex. de la mark_due/postpone)
+        await c._run_cycle()
+        assert c.last_run is not None
+        assert c.next_due is None  # udare reușită → override consumat
+
+    asyncio.run(main())
+
+
+def test_failed_watering_keeps_override_for_retry():
+    async def main():
+        hass = FakeHass({("switch", "turn_on"): "hang"})
+        c = make_coordinator(hass)
+        keep = dt_util.now().date() + dt.timedelta(days=1)
+        c.next_due = keep
+        await c._run_cycle()
+        assert c.is_watering is False
+        assert c.next_due == keep  # eșec → override NEconsumat → reîncearcă
+        assert c.last_run is None
 
     asyncio.run(main())
