@@ -63,6 +63,7 @@ VAL_START_TIME = "start_time"
 VAL_AUTO_INTERVAL = "auto_interval"  # intervalul vine din temperatură (altfel manual)
 VAL_INTERVAL = "interval_days"  # interval manual (zile), când Auto e oprit
 VAL_RAIN_COMP = "rain_comp"  # compensarea ploii (scade ploaia prevăzută din țintă)
+VAL_RAIN_FORECAST_WEIGHT = "rain_forecast_weight"  # cât (%) poate anula prognoza din udare
 VAL_MAX_CYCLE = "max_cycle_min"  # cycle & soak: minute max pe repriză (0 = dezactivat)
 VAL_SOAK = "soak_min"  # cycle & soak: pauză de infiltrare între reprize (min)
 VAL_NOTIFY = "notify"  # notificări HA la start/stop/skip
@@ -71,6 +72,7 @@ DEFAULT_TARGET_MM = 15.0
 DEFAULT_INTERVAL_DAYS = 3
 DEFAULT_MAX_CYCLE_MIN = 15.0
 DEFAULT_SOAK_MIN = 20.0
+DEFAULT_RAIN_FORECAST_WEIGHT = 100.0  # 100% = prognoza poate anula complet (comportamentul clasic)
 
 # Fereastra de prognoză orară pentru ploaia luată în calcul.
 RAIN_WINDOW_HOURS = 24

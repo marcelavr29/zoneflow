@@ -35,6 +35,7 @@ from .const import (
     DEFAULT_FORECAST_DAYS,
     DEFAULT_INTERVAL_DAYS,
     DEFAULT_MAX_CYCLE_MIN,
+    DEFAULT_RAIN_FORECAST_WEIGHT,
     DEFAULT_SOAK_MIN,
     DEFAULT_TARGET_MM,
     DEFAULT_TEST_MINUTES,
@@ -49,6 +50,7 @@ from .const import (
     VAL_MAX_CYCLE,
     VAL_NOTIFY,
     VAL_RAIN_COMP,
+    VAL_RAIN_FORECAST_WEIGHT,
     VAL_SOAK,
     VAL_START_TIME,
     VAL_TARGET_MM,
@@ -460,13 +462,28 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
         return self._build_data()
 
     # --------------------------------------------------------------- calcule
+    def _rain_split(self) -> tuple[float, float]:
+        """(ploaie căzută, ploaie prognozată) luate în calcul; (0, 0) dacă compensarea e oprită."""
+        if not self.get_bool(VAL_RAIN_COMP, True):
+            return 0.0, 0.0
+        return self.fallen_mm(), self.rain_mm
+
+    def _forecast_weight(self) -> float:
+        """Cât (%) poate anula prognoza din udare: 100 = clasic, <100 = doar reduce."""
+        return self.get_float(VAL_RAIN_FORECAST_WEIGHT, DEFAULT_RAIN_FORECAST_WEIGHT)
+
+    def _target_after_rain(self, gross: float | None) -> float | None:
+        """Ținta rămasă după ploaia căzută + partea permisă din prognoză (helper comun)."""
+        fallen, forecast = self._rain_split()
+        return calc.effective_after_rain(gross, fallen, forecast, self._forecast_weight())
+
     def _zone_target(self, zone: dict) -> float:
-        """Ținta efectivă a unei zone (L/m²) = global × factor_zonă − ploaie, ≥ 0."""
+        """Ținta efectivă a unei zone (L/m²) = global × factor_zonă, minus ploaia, ≥ 0."""
         gross = self._gross_target()
         if gross is None:
             return 0.0
         factor_pct = _num(zone.get(CONF_FACTOR_PCT), DEFAULT_FACTOR_PCT) / 100.0
-        return max(0.0, gross * factor_pct - self._rain())
+        return self._target_after_rain(gross * factor_pct) or 0.0
 
     def compute_runtimes(self) -> dict[str, float]:
         """Timpii de rulare [minute] per grup = țintă_zonă / rata grupului (metoda caserolei)."""
@@ -496,7 +513,7 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
 
     def _effective_target(self) -> float | None:
         """Ținta globală după ploaie (pentru afișare; per zonă se aplică și factorul zonei)."""
-        return calc.effective_target(self._gross_target(), self._rain())
+        return self._target_after_rain(self._gross_target())
 
     def _session_liters(self) -> float:
         """Litri pe sesiune ≈ Σ pe zone (țintă_zonă × suprafața zonei)."""
@@ -520,6 +537,7 @@ class ZoneFlowCoordinator(DataUpdateCoordinator):
             "rain_mm": rain,
             "rain_forecast_mm": self.rain_mm,
             "rain_fallen_mm": self.fallen_mm(),
+            "rain_forecast_weight": self._forecast_weight(),
             "will_skip": will_skip,
             "runtimes": runtimes,
             "liters": self._session_liters(),

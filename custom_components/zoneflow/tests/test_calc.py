@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from calc import (  # noqa: E402
     coverage,
+    effective_after_rain,
     effective_target,
     interval_from_temp,
     split_cycles,
@@ -178,6 +179,28 @@ def test_effective_target():
     assert effective_target(25, 0) == pytest.approx(25.0)
     assert effective_target(None, 5) is None
     assert effective_target(25, -3) == pytest.approx(25.0)  # ploaie negativă ignorată
+
+
+def test_effective_after_rain():
+    # cifrele userului: țintă 15, căzut 10.1, prognoză 9
+    # p=100 => clasic: max(0, 15 - 10.1 - 9) = 0 (skip complet, ca înainte)
+    assert effective_after_rain(15, 10.1, 9, 100) == pytest.approx(0.0)
+    # p=0 => prognoza ignorată: max(0, 15 - 10.1) = 4.9 (udare de compensare)
+    assert effective_after_rain(15, 10.1, 9, 0) == pytest.approx(4.9)
+    # p=50 => prognoza taie cel mult 50% din deficit(4.9)=2.45 => 4.9 - 2.45 = 2.45
+    assert effective_after_rain(15, 10.1, 9, 50) == pytest.approx(2.45)
+    # backward-compat: p=100 ≡ effective_target(gross, fallen+forecast) când forecast<=deficit
+    assert effective_after_rain(20, 5, 3, 100) == pytest.approx(effective_target(20, 5 + 3))
+    # ploaia CĂZUTĂ singură acoperă ținta => 0 indiferent de p
+    assert effective_after_rain(15, 20, 5, 100) == pytest.approx(0.0)
+    assert effective_after_rain(15, 20, 5, 0) == pytest.approx(0.0)
+    # sub 100%, prognoza NU poate anula complet: rămâne ≥ deficit*(1-p/100)
+    val = effective_after_rain(15, 0, 999, 80)  # prognoză uriașă, p=80
+    assert val == pytest.approx(15 * 0.2)  # 3.0, garantat > 0
+    assert val > 0
+    # gross None => None; prognoză negativă ignorată
+    assert effective_after_rain(None, 0, 5, 50) is None
+    assert effective_after_rain(15, 0, -4, 100) == pytest.approx(15.0)
 
 
 def test_weekly_avg():

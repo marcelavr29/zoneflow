@@ -13,11 +13,13 @@ from . import ZoneFlowConfigEntry
 from .const import (
     DEFAULT_INTERVAL_DAYS,
     DEFAULT_MAX_CYCLE_MIN,
+    DEFAULT_RAIN_FORECAST_WEIGHT,
     DEFAULT_SOAK_MIN,
     DEFAULT_TARGET_MM,
     VAL_FACTOR,
     VAL_INTERVAL,
     VAL_MAX_CYCLE,
+    VAL_RAIN_FORECAST_WEIGHT,
     VAL_SOAK,
     VAL_TARGET_MM,
 )
@@ -86,6 +88,16 @@ _NUMBERS = [
         default=DEFAULT_SOAK_MIN,
         icon="mdi:timer-sand-paused",
         unit="min",
+    ),
+    ZoneFlowNumberDef(
+        value_key=VAL_RAIN_FORECAST_WEIGHT,
+        name="Cât contează prognoza de ploaie",
+        minimum=0,
+        maximum=100,
+        step=5,
+        default=DEFAULT_RAIN_FORECAST_WEIGHT,
+        icon="mdi:weather-partly-rainy",
+        unit="%",
     ),
 ]
 

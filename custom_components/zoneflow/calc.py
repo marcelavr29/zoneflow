@@ -213,6 +213,34 @@ def effective_target(target_mm: float | None, rain_mm: float) -> float | None:
     return max(0.0, target_mm - max(0.0, rain_mm))
 
 
+def effective_after_rain(
+    gross_mm: float | None,
+    fallen_mm: float,
+    forecast_mm: float,
+    forecast_weight_pct: float,
+) -> float | None:
+    """Ținta rămasă (L/m²) după ploaia CĂZUTĂ + o parte din cea PROGNOZATĂ.
+
+    Ploaia căzută (reală) se scade întreagă. Prognoza poate anula cel mult `p%` din
+    necesarul rămas după ploaia căzută — deci sub 100% prognoza REDUCE dar nu poate
+    anula complet o udare (rămâne mereu ceva de udat dacă solul real n-a primit ținta).
+
+    - p = 100 → `max(0, gross − fallen − forecast)` (comportamentul clasic, prognoza
+      poate anula complet).
+    - 0 ≤ p < 100 → prognoza tăie cel mult `deficit·p/100` → udare minimă garantată.
+    - p = 0 → prognoza ignorată complet (doar ploaia căzută contează).
+    """
+    if gross_mm is None:
+        return None
+    deficit = gross_mm - max(0.0, fallen_mm)
+    if deficit <= 0:
+        return 0.0  # ploaia căzută singură a acoperit ținta
+    p = min(100.0, max(0.0, forecast_weight_pct)) / 100.0
+    cap = deficit * p
+    deficit -= min(max(0.0, forecast_mm), cap)
+    return max(0.0, deficit)
+
+
 def target_mm(
     avg_temp: float | None,
     factor: float = 1.0,
