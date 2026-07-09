@@ -386,11 +386,6 @@ class ZoneFlowPanel extends HTMLElement {
       </div>
       <label class="chk"><input type="checkbox" data-ctrl="toggle" data-eid="${esc(c.enabled)}" ${enabledOn ? "checked" : ""}/> Irigație activă</label>
       <label class="chk"><input type="checkbox" data-ctrl="toggle" data-eid="${esc(c.rain_comp)}" ${rainOn ? "checked" : ""}/> Compensare ploaie</label>
-      <label class="lbl">Cât contează prognoza de ploaie (%)
-        <input id="rainfcweight" type="number" min="0" max="100" step="5" value="${esc(val(c.rain_forecast_weight, "100"))}" class="num"/></label>
-      <p class="muted" style="margin-top:-4px">100% = prognoza poate anula complet o udare (ca înainte).
-      Sub 100% = prognoza doar <b>reduce</b>, lasă mereu o udare minimă dacă solul real n-a primit ținta
-      (doar ploaia CĂZUTĂ poate anula complet). 0% = ignoră prognoza. Recomandat ~50%.</p>
       <label class="chk"><input type="checkbox" data-ctrl="toggle" data-eid="${esc(c.auto_interval)}" ${autoOn ? "checked" : ""}/> Interval automat (după temperatură)</label>
       <label class="chk"><input type="checkbox" data-ctrl="toggle" data-eid="${esc(c.notify)}" ${notifyOn ? "checked" : ""}/> Notificări (start/stop/sărit)</label>
       <label class="lbl">Interval manual (zile, când „automat" e oprit)
@@ -450,12 +445,6 @@ class ZoneFlowPanel extends HTMLElement {
       <b>se scade din următoarea udare</b>; dacă a plouat cât ținta (ex. ≥15 mm), ploaia
       <b>contează ca o udare completă</b> și următoarea sesiune se mută cu un interval întreg.
       Creditul se golește după fiecare udare.</p>
-      <h3>Cât contează prognoza de ploaie</h3>
-      <p>Ploaia <b>căzută</b> (reală) se scade mereu întreagă. Pentru ploaia <b>prognozată</b>
-      (care încă n-a căzut) alegi în Setări cât să conteze: la <b>100%</b> prognoza poate anula
-      complet o udare (poate rata udarea dacă prognoza dă greș); sub 100% prognoza doar
-      <b>reduce</b> cantitatea și rămâne mereu o udare minimă dacă solul real n-a primit ținta —
-      doar ploaia căzută poate anula complet. La <b>0%</b> prognoza e ignorată. Recomandat ~50%.</p>
       <h3>Furnizor de prognoză</h3>
       <p>ZoneFlow folosește o entitate <code>weather</code> aleasă în Setări (nu un furnizor
       propriu). Dacă „Media temperaturii" e goală, entitatea aleasă nu oferă prognoză cu
@@ -579,7 +568,6 @@ class ZoneFlowPanel extends HTMLElement {
         await setNum(c.interval, "interval");
         await setNum(c.max_cycle, "maxcycle");
         await setNum(c.soak, "soak");
-        await setNum(c.rain_forecast_weight, "rainfcweight");
         // 2) Apoi setările generale (weather/test/forecast) — declanșează reload, la final.
         const weather = this.shadowRoot.getElementById("weather").value;
         const testmin = parseFloat(this.shadowRoot.getElementById("testmin").value) || 10;

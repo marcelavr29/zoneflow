@@ -23,7 +23,6 @@ from .const import (
     VAL_MAX_CYCLE,
     VAL_NOTIFY,
     VAL_RAIN_COMP,
-    VAL_RAIN_FORECAST_WEIGHT,
     VAL_SOAK,
     VAL_START_TIME,
     VAL_TARGET_MM,
@@ -85,7 +84,6 @@ def _controls(hass: HomeAssistant, entry: ConfigEntry) -> dict:
         "interval": eid("number", VAL_INTERVAL),
         "max_cycle": eid("number", VAL_MAX_CYCLE),
         "soak": eid("number", VAL_SOAK),
-        "rain_forecast_weight": eid("number", VAL_RAIN_FORECAST_WEIGHT),
         "start_time": eid("time", VAL_START_TIME),
     }
 

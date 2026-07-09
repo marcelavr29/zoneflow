@@ -15,17 +15,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
 from custom_components.zoneflow.coordinator import ZoneFlowCoordinator  # noqa: E402
 from custom_components.zoneflow.const import (  # noqa: E402
-    CONF_FACTOR_PCT,
     CONF_NOTIFY_SERVICE,
     VAL_AUTO_INTERVAL,
     VAL_ENABLED,
-    VAL_FACTOR,
     VAL_INTERVAL,
     VAL_NOTIFY,
-    VAL_RAIN_COMP,
-    VAL_RAIN_FORECAST_WEIGHT,
     VAL_START_TIME,
-    VAL_TARGET_MM,
 )
 from homeassistant.util import dt as dt_util  # noqa: E402
 
@@ -229,44 +224,6 @@ def test_corrupt_next_due_self_heals():
         assert c.next_due is None  # dată invalidă → None, fără crash
 
     asyncio.run(main())
-
-
-# --------------------------------------------------------- ținta după ploaie (weight)
-
-def make_rain_coord(target=15.0, factor=1.0, fallen=0.0, forecast=0.0, weight=100.0, rain_comp=True):
-    c = object.__new__(ZoneFlowCoordinator)
-    c.values = {
-        VAL_TARGET_MM: target,
-        VAL_FACTOR: factor,
-        VAL_RAIN_COMP: rain_comp,
-        VAL_RAIN_FORECAST_WEIGHT: weight,
-    }
-    c.rain_mm = forecast
-    c._rain_ledger = {}
-    c.fallen_mm = lambda: fallen
-    return c
-
-
-def test_zone_target_forecast_weight():
-    zone = {CONF_FACTOR_PCT: 100}
-    # p=100 (clasic): 15 - 10.1 - 9 <= 0 => skip
-    c = make_rain_coord(fallen=10.1, forecast=9, weight=100)
-    assert c._zone_target(zone) == 0.0
-    # p=50 => udare de compensare ~2.45
-    c = make_rain_coord(fallen=10.1, forecast=9, weight=50)
-    assert abs(c._zone_target(zone) - 2.45) < 1e-6
-    # p=0 => doar căzută => 4.9
-    c = make_rain_coord(fallen=10.1, forecast=9, weight=0)
-    assert abs(c._zone_target(zone) - 4.9) < 1e-6
-
-
-def test_zone_target_factor_and_rain_off():
-    # factor de zonă 50% => țintă zonă 7.5; fără ploaie
-    c = make_rain_coord(target=15, fallen=0, forecast=0)
-    assert c._zone_target({CONF_FACTOR_PCT: 50}) == 7.5
-    # compensare OPRITĂ => ploaia ignorată complet, țintă plină chiar dacă a plouat
-    c = make_rain_coord(target=15, fallen=99, forecast=99, rain_comp=False)
-    assert c._zone_target({CONF_FACTOR_PCT: 100}) == 15.0
 
 
 # --------------------------------------------------------- REGRESIE: _notify nu mai crapă
